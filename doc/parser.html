@@ -1,13 +1,18 @@
 <html>
 <head>
+    <link rel="stylesheet" href="resources/css/explain.css"/>
     <script src="resources/js/explain.js"></script>
     <script src="../playspecs.js"></script>
 </head>
 <body>
 <p>hello</p>
 <script>
-//    var pp = require("./playspecs").hi;
-//    console.log(pp);
+    var pp = new Playspecs.Parser;
+    console.log(pp);
+    desc("hi", function() {
+        ex(1,2);
+        ex(4,4);
+    });
 </script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 /* @flow */
 
-class Parser {
+export default class Parser {
 
 }

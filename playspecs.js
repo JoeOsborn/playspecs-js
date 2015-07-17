@@ -78,11 +78,18 @@ var Playspecs =
 
 	"use strict";
 	
+	Object.defineProperty(exports, "__esModule", {
+	  value: true
+	});
+	
 	function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 	
 	var Parser = function Parser() {
 	  _classCallCheck(this, Parser);
 	};
+	
+	exports["default"] = Parser;
+	module.exports = exports["default"];
 
 /***/ }
 /******/ ]);

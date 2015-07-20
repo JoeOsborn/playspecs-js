@@ -5,14 +5,149 @@
     <script src="../playspecs.js"></script>
 </head>
 <body>
-<p>hello</p>
+<h1>Playspecs Parser</h1>
+
+<p>The Playspecs parser is a top-down operator precedence parser, also called a <a
+        href="http://dl.acm.org/citation.cfm?id=512931">Pratt parser</a>. Pleasant summaries of the technique include <a
+        href="http://javascript.crockford.com/tdop/tdop.html">Doug Crockford's</a> and <a
+        href="http://eli.thegreenplace.net/2010/01/02/top-down-operator-precedence-parsing">Eli Bendersky's</a>.</p>
+
+<h2>Tokenization</h2>
+
+<p>Parsing begins with tokenization. The input string is transformed into a token stream and then the tokens drive the
+    recursive descent stage. The Playspecs parser recognizes both the temporal and propositional fragments of the
+    game-independent Playspecs syntax, and can tokenize certain simple specs on its own:</p>
 <script>
-    var pp = new Playspecs.Parser;
-    console.log(pp);
-    desc("hi", function() {
-        ex(1,2);
-        ex(4,4);
+    desc("", function () {
+        // Parsers are initialized with a context object, explained in the next paragraph.
+        var parser = new Playspecs.Parser.Parser({});
+        // Tokenize returns a kind of token stream with a list of tokens and a position index into that list.
+        var tokens = parser.tokenize("start, ..., end");
+        // It should look like this:
+        var expected = {
+            tokens: [
+                {
+                    // `type` is the kind of Token this is. It is duplicated from the definition for convenience.
+                    type: Playspecs.Parser.tokenTypes.START,
+                    // `value` is its value; for symbols like `start` it's just the string itself.
+                    // For e.g. numbers, the value might be the Number represented by the string.
+                    value: "start",
+                    // `range` is where this token is found in the string in terms of first and last character positions.
+                    range: {start: 0, end: 5},
+                    // `definition` is a reference to the underlying token definition.
+                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.START]
+                },
+                {
+                    type: Playspecs.Parser.tokenTypes.CONCATENATION,
+                    value: ",",
+                    range: {start: 5, end: 6},
+                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.CONCATENATION]
+                },
+                {
+                    type: Playspecs.Parser.tokenTypes.DOTS_GREEDY,
+                    value: "...",
+                    range: {start: 7, end: 10},
+                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.DOTS_GREEDY]
+                },
+                {
+                    type: Playspecs.Parser.tokenTypes.CONCATENATION,
+                    value: ",",
+                    range: {start: 10, end: 11},
+                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.CONCATENATION]
+                },
+                {
+                    type: Playspecs.Parser.tokenTypes.END,
+                    value: "end",
+                    range: {start: 12, end: 15},
+                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.END]
+                }
+            ],
+            position: 0,
+            errors: []
+        };
+        ex(tokens, expected);
+    });
+    desc("<p>In case of an error, the unrecognized tokens are handled as well as possible and returned in the stream " +
+            "object's <span class='var'>errors</span> field.</p>", function () {
+        var parser = new Playspecs.Parser.Parser({});
+        var tokens = parser.tokenize("start bad , -> end");
+        var expected = {
+            tokens: [
+                {
+                    type: Playspecs.Parser.tokenTypes.START,
+                    value: "start",
+                    range: {start: 0, end: 5},
+                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.START]
+                },
+                {
+                    type: Playspecs.Parser.tokenTypes.ERROR,
+                    value: "bad",
+                    range: {start: 6, end: 9},
+                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.ERROR]
+                },
+                {
+                    type: Playspecs.Parser.tokenTypes.CONCATENATION,
+                    value: ",",
+                    range: {start: 10, end: 11},
+                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.CONCATENATION]
+                },
+                {
+                    type: Playspecs.Parser.tokenTypes.ERROR,
+                    value: "->",
+                    range: {start: 12, end: 14},
+                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.ERROR]
+                },
+                {
+                    type: Playspecs.Parser.tokenTypes.END,
+                    value: "end",
+                    range: {start: 15, end: 18},
+                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.END]
+                },
+            ],
+            position: 0,
+            errors: [1, 3]
+        };
+        ex(tokens, expected);
     });
 </script>
+<p>From the standpoint of Playspecs, the external API calls into the Parser to produce a parse tree of a Playspec from a
+    string and a game-specific Context. The Context includes, among other things, data structures which teach the Parser
+    how to parse game-specific syntax for atomic formulae (and, later, to give semantics to such syntax). Specifically,
+    the Context has a so-called Token List represented as a JavaScript object. The schema of individual Token
+    Definitions of that list is roughly:</p>
+<pre>...
+    tokens: [
+        {
+            type: "TOKEN_TYPE_A",
+            match: Regex | [String], /* All remaining fields are optional. */
+            [value: Function(MatchResult):Object /* MatchResult is like the result of RegExp.exec() */,]
+            [tightness: int,]
+            [startParse: Function(Parser, Token) /* Token is of type TOKEN_TYPE_A. Pratt's "nud". */ ,]
+            [extendParse: Function(Parser, ParseTree, Token) /* Token is of type TOKEN_TYPE_A. Pratt's "led". */ ]
+        },
+        ...
+    ]
+...</pre>
+<p>Parser constructs its internal data structures from this schema. For each value in the tokens list, it builds its own
+    Token Definition with the <span class="var">type</span>, <span class="var">match</span>, etc. During tokenization,
+    each Token Definition is tried in turn (after Parser's internal Token List). If a token's
+    <span class="var">match</span> expression succeeds, a Token object will be built with the corresponding type, a link
+    to the definition, and the matched range of the stream. Its <span class="var">value</span> will default to the
+    matched string, but if the Token Definition defines a <span class="var">value</span> field then the result of that
+    function will be used instead.</p>
+<script>
+    desc("<p>...tokenizing for prom week...</p>", function () {
+        var parser = new Playspecs.Parser.Parser({
+            tokens: [
+                {
+                    type: "PERSON",
+                    match: ["Chloe", "Simon", "Phoebe"]
+                }
+            ]
+        });
+        ex("...", "...");
+    });
+</script>
+<h2>Parsing</h2>
 </body>
 </html>

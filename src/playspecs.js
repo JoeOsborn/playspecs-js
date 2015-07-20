@@ -8,10 +8,10 @@
 //
 //export Parser;
 
-import Parser from "./parser";
+import {Parser, tokenTypes} from "./parser";
 
 export function hi() {
     console.log("hello there");
 }
 
-exports.Parser = Parser;
+exports.Parser = {Parser:Parser, tokenTypes:tokenTypes};

@@ -7,24 +7,28 @@
 <body>
 <h1>Playspecs Parser</h1>
 
-<p>The Playspecs parser is a top-down operator precedence parser, also called a <a
-        href="http://dl.acm.org/citation.cfm?id=512931">Pratt parser</a>. Pleasant summaries of the technique include <a
-        href="http://javascript.crockford.com/tdop/tdop.html">Doug Crockford's</a> and <a
-        href="http://eli.thegreenplace.net/2010/01/02/top-down-operator-precedence-parsing">Eli Bendersky's</a>.</p>
+<p>The Playspecs parser is a top-down operator precedence parser, also called a
+    <a href="http://dl.acm.org/citation.cfm?id=512931">Pratt parser</a>. Modern writeups of the technique include
+    <a href="http://javascript.crockford.com/tdop/tdop.html">Doug Crockford's</a> article and
+    <a href="http://eli.thegreenplace.net/2010/01/02/top-down-operator-precedence-parsing">Eli Bendersky's</a>
+    readable summary of <a href="http://effbot.org/zone/simple-top-down-parsing.htm">Lundh's Python parser</a>.</p>
 
 <h2>Tokenization</h2>
 
 <p>Parsing begins with tokenization. The input string is transformed into a token stream and then the tokens drive the
     recursive descent stage. The Playspecs parser recognizes both the temporal and propositional fragments of the
-    game-independent Playspecs syntax, and can tokenize certain simple specs on its own:</p>
+    game-independent Playspecs syntax, and can tokenize certain simple specs on its own (this core syntax is defined in
+    <a href="resources/paper.pdf">the AIIDE paper</a>). Whitespace is ignored except as it separates other tokens.</p>
 <script>
     desc("", function () {
         // Parsers are initialized with a context object, explained in the next paragraph.
         var parser = new Playspecs.Parser.Parser({});
         // Tokenize returns a kind of token stream with a list of tokens and a position index into that list.
+        // It also returns the original string in case the eventual parse doesn't use up the whole string.
         var tokens = parser.tokenize("start, ..., end");
         // It should look like this:
         var expected = {
+            string: "start, ..., end",
             tokens: [
                 {
                     // `type` is the kind of Token this is. It is duplicated from the definition for convenience.
@@ -33,33 +37,27 @@
                     // For e.g. numbers, the value might be the Number represented by the string.
                     value: "start",
                     // `range` is where this token is found in the string in terms of first and last character positions.
-                    range: {start: 0, end: 5},
-                    // `definition` is a reference to the underlying token definition.
-                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.START]
+                    range: {start: 0, end: 5}
                 },
                 {
                     type: Playspecs.Parser.tokenTypes.CONCATENATION,
                     value: ",",
-                    range: {start: 5, end: 6},
-                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.CONCATENATION]
+                    range: {start: 5, end: 6}
                 },
                 {
                     type: Playspecs.Parser.tokenTypes.DOTS_GREEDY,
                     value: "...",
-                    range: {start: 7, end: 10},
-                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.DOTS_GREEDY]
+                    range: {start: 7, end: 10}
                 },
                 {
                     type: Playspecs.Parser.tokenTypes.CONCATENATION,
                     value: ",",
-                    range: {start: 10, end: 11},
-                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.CONCATENATION]
+                    range: {start: 10, end: 11}
                 },
                 {
                     type: Playspecs.Parser.tokenTypes.END,
                     value: "end",
-                    range: {start: 12, end: 15},
-                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.END]
+                    range: {start: 12, end: 15}
                 }
             ],
             position: 0,
@@ -68,40 +66,36 @@
         ex(tokens, expected);
     });
     desc("<p>In case of an error, the unrecognized tokens are handled as well as possible and returned in the stream " +
-            "object's <span class='var'>errors</span> field.</p>", function () {
+            "object's <code>errors</code> field.</p>", function () {
         var parser = new Playspecs.Parser.Parser({});
         var tokens = parser.tokenize("start bad , -> end");
         var expected = {
+            string: "start bad , -> end",
             tokens: [
                 {
                     type: Playspecs.Parser.tokenTypes.START,
                     value: "start",
-                    range: {start: 0, end: 5},
-                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.START]
+                    range: {start: 0, end: 5}
                 },
                 {
                     type: Playspecs.Parser.tokenTypes.ERROR,
                     value: "bad",
-                    range: {start: 6, end: 9},
-                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.ERROR]
+                    range: {start: 6, end: 9}
                 },
                 {
                     type: Playspecs.Parser.tokenTypes.CONCATENATION,
                     value: ",",
-                    range: {start: 10, end: 11},
-                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.CONCATENATION]
+                    range: {start: 10, end: 11}
                 },
                 {
                     type: Playspecs.Parser.tokenTypes.ERROR,
                     value: "->",
-                    range: {start: 12, end: 14},
-                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.ERROR]
+                    range: {start: 12, end: 14}
                 },
                 {
                     type: Playspecs.Parser.tokenTypes.END,
                     value: "end",
-                    range: {start: 15, end: 18},
-                    definition: parser.tokensByType[Playspecs.Parser.tokenTypes.END]
+                    range: {start: 15, end: 18}
                 },
             ],
             position: 0,
@@ -110,6 +104,14 @@
         ex(tokens, expected);
     });
 </script>
+<p>The reference implementation tokenizes the entire string at once for clarity and simplicity. If the string to be
+    parsed is large and contains something besides a Playspec at the beginning, or the Playspec is followed by a
+    substantial amount of text, this could be very inefficient. If this is important to your use case, you should
+    redefine the <code>TokenStream</code> type to contain the current token and the unparsed remainder of
+    the string, and reimplement <code>Parser.tokenize</code>, <code>Parser.advance</code>,
+    <code>Parser.currentToken</code>, and <code>Parser.remainder</code> to tokenize as
+    needed.</p>
+
 <p>From the standpoint of Playspecs, the external API calls into the Parser to produce a parse tree of a Playspec from a
     string and a game-specific Context. The Context includes, among other things, data structures which teach the Parser
     how to parse game-specific syntax for atomic formulae (and, later, to give semantics to such syntax). Specifically,
@@ -120,34 +122,221 @@
         {
             type: "TOKEN_TYPE_A",
             match: Regex | [String], /* All remaining fields are optional. */
-            [value: Function(MatchResult):Object /* MatchResult is like the result of RegExp.exec() */,]
+            [value: (MatchResult)=>any /* MatchResult is like the result of RegExp.exec() */,]
             [tightness: int,]
-            [startParse: Function(Parser, Token) /* Token is of type TOKEN_TYPE_A. Pratt's "nud". */ ,]
-            [extendParse: Function(Parser, ParseTree, Token) /* Token is of type TOKEN_TYPE_A. Pratt's "led". */ ]
+            [startParse: (Parser, Token)=>any /* Token is of type TOKEN_TYPE_A. Pratt's "nud". */ ,]
+            [extendParse: (Parser, ParseTree, Token)=>any /* Token is of type TOKEN_TYPE_A. Pratt's "led". */ ]
         },
         ...
     ]
 ...</pre>
 <p>Parser constructs its internal data structures from this schema. For each value in the tokens list, it builds its own
-    Token Definition with the <span class="var">type</span>, <span class="var">match</span>, etc. During tokenization,
-    each Token Definition is tried in turn (after Parser's internal Token List). If a token's
-    <span class="var">match</span> expression succeeds, a Token object will be built with the corresponding type, a link
-    to the definition, and the matched range of the stream. Its <span class="var">value</span> will default to the
-    matched string, but if the Token Definition defines a <span class="var">value</span> field then the result of that
-    function will be used instead.</p>
+    Token Definition with the <code>type</code>, <code>match</code>, etc. During tokenization,
+    each Token Definition is tried in turn (before Parser's internal Token List). If a token's
+    <code>match</code> regular expression succeeds (or if its constant string or array of constant string is
+    a prefix of the string), a Token object will be built with the corresponding type and the matched range of the
+    stream. Its <code>value</code> will default to the matched string, but if the Token Definition defines a
+    <code>value</code> field then the result of that function will be used instead.</p>
+
+<p>In general, there is a trade-off between using complicated token match expressions and doing more parsing later on.
+    In the PuzzleScript case, the language of patterns is matched easily by regular expressions and the token contains
+    all the necessary information to check properties (in fact, we reuse most of PuzzleScript's own parsing machinery
+    after we obtain e.g. a rule pattern). In Prom Week, the query syntax can be used in a variety of different
+    contexts so it makes sense to separate the parsing into several steps which compose better. One important
+    consideration is conflicts with the core Playspecs syntax: If a custom syntax wanted to recognize a <code>.</code>
+    token, care must be taken to ensure it is not matched instead of the built-in <code>...</code> (e.g., with a regular
+    expression like <code>/\.(?!\.)/</code>). Such conflicts will generally be evident at the time of use. Pratt parsing
+    is token-directed, and since this reference implementation does not support extending existing tokens'
+    <code>startParse</code> and <code>extendParse</code> functions, ambiguities are best avoided.</p>
 <script>
-    desc("<p>...tokenizing for prom week...</p>", function () {
+    desc("<p>For Prom Week, we want to describe network links and current relationships between characters. These " +
+            "are mostly directional (though there are some bidirectional relationships), so we use a sort of labeled " +
+            "edge syntax with an implied left-to-right orientation. Our token types are people, relationships, " +
+            "networks, inequalities, and numbers. Let's tokenize a fragment of the Prom Week syntax:</p>", function () {
         var parser = new Playspecs.Parser.Parser({
             tokens: [
                 {
                     type: "PERSON",
-                    match: ["Chloe", "Simon", "Phoebe"]
+                    match: ["Chloe", "Simon", "Phoebe", "Doug"/*, ... */]
+                },
+                {
+                    type: "RELATIONSHIP",
+                    match: ["dating", "friends", "enemies", "embarrassed"/*, ... */]
+                },
+                {
+                    type: "LINK",
+                    match: "-"
                 }
+                //Also: networks, inequalities, numbers
             ]
         });
-        ex("...", "...");
+        var tokens = parser.tokenize("start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end")
+        var expected = {
+            "string": "start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end",
+            "tokens": [
+                {
+                    "type": "start",
+                    "value": "start",
+                    "range": {
+                        "start": 0,
+                        "end": 5
+                    }
+                },
+                {
+                    "type": ",",
+                    "value": ",",
+                    "range": {
+                        "start": 5,
+                        "end": 6
+                    }
+                },
+                {
+                    "type": "not",
+                    "value": "not",
+                    "range": {
+                        "start": 7,
+                        "end": 10
+                    }
+                },
+                {
+                    "type": "PERSON",
+                    "value": "Chloe",
+                    "range": {
+                        "start": 11,
+                        "end": 16
+                    }
+                },
+                {
+                    "type": "LINK",
+                    "value": "-",
+                    "range": {
+                        "start": 16,
+                        "end": 17
+                    }
+                },
+                {
+                    "type": "RELATIONSHIP",
+                    "value": "dating",
+                    "range": {
+                        "start": 17,
+                        "end": 23
+                    }
+                },
+                {
+                    "type": "LINK",
+                    "value": "-",
+                    "range": {
+                        "start": 23,
+                        "end": 24
+                    }
+                },
+                {
+                    "type": "PERSON",
+                    "value": "Doug",
+                    "range": {
+                        "start": 24,
+                        "end": 28
+                    }
+                },
+                {
+                    "type": "...",
+                    "value": "...",
+                    "range": {
+                        "start": 29,
+                        "end": 32
+                    }
+                },
+                {
+                    "type": ",",
+                    "value": ",",
+                    "range": {
+                        "start": 32,
+                        "end": 33
+                    }
+                },
+                {
+                    "type": "PERSON",
+                    "value": "Doug",
+                    "range": {
+                        "start": 34,
+                        "end": 38
+                    }
+                },
+                {
+                    "type": "LINK",
+                    "value": "-",
+                    "range": {
+                        "start": 38,
+                        "end": 39
+                    }
+                },
+                {
+                    "type": "RELATIONSHIP",
+                    "value": "embarrassed",
+                    "range": {
+                        "start": 39,
+                        "end": 50
+                    }
+                },
+                {
+                    "type": "LINK",
+                    "value": "-",
+                    "range": {
+                        "start": 50,
+                        "end": 51
+                    }
+                },
+                {
+                    "type": "PERSON",
+                    "value": "Chloe",
+                    "range": {
+                        "start": 51,
+                        "end": 56
+                    }
+                },
+                {
+                    "type": "&",
+                    "value": "&",
+                    "range": {
+                        "start": 57,
+                        "end": 58
+                    }
+                },
+                {
+                    "type": "end",
+                    "value": "end",
+                    "range": {
+                        "start": 59,
+                        "end": 62
+                    }
+                }
+            ],
+            "position": 0,
+            "errors": []
+        };
+        ex(tokens, expected);
     });
 </script>
 <h2>Parsing</h2>
+
+<p>Pratt parsers are modified recursive descent parsers that achieve great practical efficiency by being token-directed.
+    While the external API is <code>parse(s:string):ParseResult</code>, each internal recursion goes through a
+    designated function <code>parseExpression(tightness:number):ParseTree</code>, which starts by taking
+    the first token off of <code>s</code> and calling its <code>startParse</code> function, yielding an initial
+    <code>ParseTree</code> (this call might itself recurse into <code>parseExpression</code>). Having the initial tree
+    in hand, it now tries to extend this tree as far as operator precedence allows (according to the
+    <code>tightness</code> parameter). <code>parseExpression</code> repeatedly looks at the now-current token (since
+    <code>startParse</code> might have consumed tokens on its own, this may not be the immediately subsequent token to
+    the first one) and verifies that its <code>tightness</code> is greater than that of the call to
+    <code>parseExpression</code>: in other words, whether this operator binds tighter than the operator just above the
+    call to <code>parseExpression</code>. If so, that operator's <code>extendParse</code> function is called (again, it
+    might recurse into <code>parseExpression</code>, possibly with a different <code>tightness</code>) and the current
+    parse tree is replaced by its result. If not, the current parse tree is returned.</p>
+
+<p><code>ParseTree</code> nodes are constructed automatically by the <code>Parser</code> machinery. Character ranges are
+    associated with each node based on the consumed tokens. Errors are a special kind of parse node constructed by a
+    method on <code>Parser</code>, and they are placed into the tree where the error occurs. They are also recorded in
+    the <code>errors</code> field of <code>Parser</code> and returned along with the final parse tree and the remainder
+    of the string.</p>
 </body>
 </html>

@@ -102,54 +102,148 @@ var Playspecs =
 	};
 	
 	exports.tokenTypes = tokenTypes;
+	var parseValue = function parseValue(parser, token) {
+	    return parser.node(token.type, token.value);
+	};
+	
+	exports.parseValue = parseValue;
+	var parseInfixR = function parseInfixR(parser, left, token) {
+	    var children = [left];
+	    children.push(parser.parseExpression(token.tightness));
+	    return parser.node(token.type, token.value, children);
+	};
+	
+	exports.parseInfixR = parseInfixR;
+	var parseInfixRPropositional = function parseInfixRPropositional(parser, left, token) {
+	    if (!parser.isPropositional(left)) {
+	        return parser.error("Left hand side of token must be propositional", token, left);
+	    }
+	    var children = [left];
+	    var right = parser.parseExpression(token.tightness);
+	    if (!parser.isPropositional(right)) {
+	        return parser.error("Right hand side of token must be propositional", token, right);
+	    }
+	    children.push(right);
+	    return parser.node(token.type, token.value, children);
+	};
+	
+	exports.parseInfixRPropositional = parseInfixRPropositional;
+	var BOUND_INFINITE = "$END";
+	
 	var standardTokens = [{
 	    type: tokenTypes.WHITESPACE,
 	    match: /^\s+/
 	}, {
 	    type: tokenTypes.CONCATENATION,
-	    match: [tokenTypes.CONCATENATION]
+	    match: [tokenTypes.CONCATENATION],
+	    tightness: 100,
+	    extendParse: parseInfixR
 	}, {
 	    type: tokenTypes.DOTS_GREEDY,
-	    match: /^([0-9]*)\s*\.\.\.\s*([0-9]*)/
+	    match: /^([0-9]*)\s*\.\.\.\s*([0-9]*)/,
+	    value: function value(matchResult) {
+	        return {
+	            greedy: true,
+	            lowerBound: matchResult[1] ? parseInt(matchResult[1]) : 0,
+	            upperBound: matchResult[2] ? parseInt(matchResult[2]) : BOUND_INFINITE
+	        };
+	    },
+	    tightness: 110,
+	    startParse: parseValue,
+	    extendParse: function extendParse(parser, left, token) {
+	        //TODO: Handle parse errors
+	        return parser.node(token.type, token, [left]);
+	    }
 	}, {
 	    type: tokenTypes.DOTS_RELUCTANT,
-	    match: /^([0-9]*)\s*\.\.\s*([0-9]*)/
+	    match: /^([0-9]*)\s*\.\.\s*([0-9]*)/,
+	    tightness: 110,
+	    value: function value(matchResult) {
+	        return {
+	            greedy: false,
+	            lowerBound: matchResult[1] ? parseInt(matchResult[1]) : 0,
+	            upperBound: matchResult[2] ? parseInt(matchResult[2]) : BOUND_INFINITE
+	        };
+	    },
+	    startParse: parseValue,
+	    extendParse: function extendParse(parser, left, token) {
+	        //TODO: Handle parse errors
+	        return parser.node(token.type, token, [left]);
+	    }
 	}, {
 	    type: tokenTypes.DOTS_OMEGA,
-	    match: [tokenTypes.DOTS_OMEGA]
+	    match: [tokenTypes.DOTS_OMEGA],
+	    tightness: 110,
+	    startParse: parseValue,
+	    extendParse: function extendParse(parser, left, token) {
+	        //TODO: Handle parse errors
+	        return parser.node(token.type, token, [left]);
+	    }
 	}, {
 	    type: tokenTypes.LEFT_PAREN,
-	    match: [tokenTypes.LEFT_PAREN]
+	    match: [tokenTypes.LEFT_PAREN],
+	    startParse: function startParse(parser, token) {
+	        //parse an expression at RBP 0, then eat a )
+	        var expr = parser.parseExpression(0);
+	        if (parser.currentToken().type != tokenTypes.RIGHT_PAREN) {
+	            return parser.error("Missing right parenthesis", token, expr);
+	        }
+	        return parser.node(token.type, token.value, [expr]);
+	    }
 	}, {
 	    type: tokenTypes.RIGHT_PAREN,
 	    match: [tokenTypes.RIGHT_PAREN]
 	}, {
 	    type: tokenTypes.ALTERNATION,
-	    match: [tokenTypes.ALTERNATION]
+	    match: [tokenTypes.ALTERNATION],
+	    tightness: 60,
+	    extendParse: parseInfixR
 	}, {
 	    type: tokenTypes.INTERSECTION,
-	    match: [tokenTypes.INTERSECTION]
+	    match: [tokenTypes.INTERSECTION],
+	    tightness: 50,
+	    extendParse: parseInfixR
 	}, {
 	    type: tokenTypes.AND,
-	    match: [tokenTypes.AND]
+	    match: [tokenTypes.AND],
+	    tightness: 200,
+	    extendParse: parseInfixRPropositional
 	}, {
 	    type: tokenTypes.OR,
-	    match: [tokenTypes.OR]
+	    match: [tokenTypes.OR],
+	    tightness: 210,
+	    extendParse: parseInfixRPropositional
 	}, {
 	    type: tokenTypes.NOT,
-	    match: [tokenTypes.NOT]
+	    match: [tokenTypes.NOT],
+	    tightness: 220,
+	    startParse: function startParse(parser, token) {
+	        var phi = parser.parseExpression(token.tightness);
+	        if (!parser.isPropositional(phi)) {
+	            return parser.error("NOT may only negate propositional state formulae", token, phi);
+	        }
+	        return parser.node(token.type, token, [phi]);
+	    }
 	}, {
 	    type: tokenTypes.START,
-	    match: [tokenTypes.START]
+	    match: [tokenTypes.START],
+	    startParse: parseValue
 	}, {
 	    type: tokenTypes.END,
-	    match: [tokenTypes.END]
+	    match: [tokenTypes.END],
+	    startParse: parseValue
 	}, {
 	    type: tokenTypes.ERROR,
-	    match: /^\S+/
+	    match: /^\S+/,
+	    startParse: parseValue
 	}];
 	
 	exports.standardTokens = standardTokens;
+	var ERROR = "ERROR";
+	
+	function isString(s) {
+	    return typeof s === "string" || s instanceof String;
+	}
 	
 	var Parser = (function () {
 	    function Parser(context) {
@@ -157,29 +251,49 @@ var Playspecs =
 	
 	        this.tokenDefinitions = [];
 	        this.tokensByType = {};
-	        var tokens = (context.tokens || []).concat(standardTokens);
+	        this.parseErrors = [];
+	        var customTokens = context.tokens || [];
+	        var tokens = customTokens.concat(standardTokens);
 	        for (var ti = 0; ti < tokens.length; ti++) {
 	            var input = tokens[ti];
 	            var defn = {
 	                type: input.type,
-	                match: input.match instanceof String ? [input.match] : input.match,
+	                match: isString(input.match) ? [input.match] : input.match,
 	                value: input.value || function (mr) {
 	                    return mr[0];
 	                },
 	                tightness: input.tightness || 0,
-	                startParse: input.startParse || function (_parser, token) {
-	                    return token;
+	                startParse: input.startParse || function (parser, token) {
+	                    return parser.error("Can't start a parse tree with this token", token);
 	                },
 	                extendParse: input.extendParse || function (parser, token, parseTree) {
-	                    return parser.error("Can't extend a parse tree with a value type", token, parseTree);
+	                    return parser.error("Can't extend a parse tree with this token", token, parseTree);
 	                }
 	            };
 	            this.tokenDefinitions.push(defn);
 	            this.tokensByType[defn.type] = defn;
 	        }
+	        this.resetStream();
 	    }
 	
 	    _createClass(Parser, [{
+	        key: "node",
+	        value: function node(type) {
+	            var value = arguments.length <= 1 || arguments[1] === undefined ? undefined : arguments[1];
+	            var children = arguments.length <= 2 || arguments[2] === undefined ? [] : arguments[2];
+	
+	            return { type: type, value: value, children: children, range: { start: -1, end: -1 } };
+	        }
+	    }, {
+	        key: "error",
+	        value: function error(msg, token) {
+	            var tree = arguments.length <= 2 || arguments[2] === undefined ? undefined : arguments[2];
+	
+	            var err = node(ERROR, { message: msg, token: token, tree: tree });
+	            this.parseErrors.push(err);
+	            return err;
+	        }
+	    }, {
 	        key: "tokenize",
 	        value: function tokenize(str) {
 	            var result = [];
@@ -214,15 +328,97 @@ var Playspecs =
 	                            result.push({
 	                                type: tokenDefinition.type,
 	                                value: tokenDefinition.value(matchResult),
-	                                range: { start: oldIndex, end: index },
-	                                definition: tokenDefinition
+	                                range: { start: oldIndex, end: index }
 	                            });
 	                        }
 	                        break;
 	                    }
 	                }
 	            }
-	            return { tokens: result, position: 0, errors: errors };
+	            return { string: str, tokens: result, position: 0, errors: errors };
+	        }
+	    }, {
+	        key: "isCustom",
+	        value: function isCustom(p) {
+	            return !(p.type in tokenTypes);
+	        }
+	    }, {
+	        key: "isPropositional",
+	        value: (function (_isPropositional) {
+	            function isPropositional(_x) {
+	                return _isPropositional.apply(this, arguments);
+	            }
+	
+	            isPropositional.toString = function () {
+	                return _isPropositional.toString();
+	            };
+	
+	            return isPropositional;
+	        })(function (p) {
+	            return isCustom(p) || p.type == tokenTypes.AND || p.type == tokenTypes.OR || p.type == tokenTypes.NOT || p.type == tokenTypes.START || p.type == tokenTypes.END || p.type == tokenTypes.LEFT_PAREN && p.children.every(isPropositional);
+	        })
+	    }, {
+	        key: "resetStream",
+	        value: function resetStream() {
+	            this.stream = { string: "", tokens: [], position: 0, errors: [] };
+	        }
+	    }, {
+	        key: "charPosition",
+	        value: function charPosition() {
+	            return currentToken() ? currentToken().range.start : this.stream.string.length;
+	        }
+	    }, {
+	        key: "remainder",
+	        value: function remainder() {
+	            var end = charPosition();
+	            return this.stream.string.substr(end);
+	        }
+	    }, {
+	        key: "currentToken",
+	        value: function currentToken() {
+	            return this.stream.tokens[this.stream.position];
+	        }
+	    }, {
+	        key: "advance",
+	        value: function advance() {
+	            this.stream.position++;
+	        }
+	    }, {
+	        key: "parse",
+	        value: function parse(str) {
+	            this.stream = this.tokenize(str);
+	            this.parseErrors = [];
+	            var tree = parseExpression(0);
+	            var result = { tree: tree, errors: this.parseErrors, remainder: remainder() };
+	            this.parseErrors = [];
+	            resetStream();
+	            return result;
+	        }
+	    }, {
+	        key: "parseExpression",
+	        value: function parseExpression(tightness) {
+	            var token = currentToken();
+	            var start = token.range.start;
+	            advance();
+	            var tree = token.startParse(this, token);
+	            tree.range.start = start;
+	            tree.range.end = charPosition();
+	            if (tree.type == ERROR) {
+	                return tree;
+	            }
+	            token = currentToken();
+	            while (token && tightness < token.tightness) {
+	                advance();
+	                var newTree = token.extendParse(this, tree, token);
+	                newTree.range.start = tree.range.start;
+	                newTree.range.end = charPosition();
+	                if (newTree.type == ERROR) {
+	                    return newTree;
+	                }
+	                tree = newTree;
+	                token = currentToken();
+	            }
+	            return tree;
 	        }
 	    }]);
 	

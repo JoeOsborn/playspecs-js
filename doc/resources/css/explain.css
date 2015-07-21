@@ -6,3 +6,4 @@ pre {outline: 1px solid #ccc; padding: 5px; margin: 5px; }
 .key { color: black; }
 .good { background-color: lightgreen; }
 .bad { background-color: lightcoral; }
+code { background-color: lightgray; }

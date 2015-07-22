@@ -21,44 +21,60 @@
     <a href="resources/paper.pdf">the AIIDE paper</a>). Whitespace is ignored except as it separates other tokens.</p>
 <script>
     var expectedTokens = {
-        string: "start, ..., end",
-        tokens: [
+        "string": "start, ..., end",
+        "tokens": [
             {
-                // `type` is the kind of Token this is. It is duplicated from the definition for convenience.
-                type: Playspecs.Parser.tokenTypes.START,
-                // `value` is its value; for symbols like `start` it's just the string itself.
-                // For e.g. numbers, the value might be the Number represented by the string.
-                value: "start",
-                // `range` is where this token is found in the string in terms of first and last character positions.
-                range: {start: 0, end: 5}
+                "type": "start",
+                "value": "start",
+                "tightness": 0,
+                "range": {
+                    "start": 0,
+                    "end": 5
+                }
             },
             {
-                type: Playspecs.Parser.tokenTypes.CONCATENATION,
-                value: ",",
-                range: {start: 5, end: 6}
+                "type": ",",
+                "value": ",",
+                "tightness": 100,
+                "range": {
+                    "start": 5,
+                    "end": 6
+                }
             },
             {
-                type: Playspecs.Parser.tokenTypes.DOTS_GREEDY,
-                value: {
-                    greedy: true,
-                    lowerBound: 0,
-                    upperBound: "$END"
+                "type": "...",
+                "value": {
+                    "greedy": true,
+                    "lowerBound": 0,
+                    "upperBound": "$END"
                 },
-                range: {start: 7, end: 10}
+                "tightness": 110,
+                "range": {
+                    "start": 7,
+                    "end": 10
+                }
             },
             {
-                type: Playspecs.Parser.tokenTypes.CONCATENATION,
-                value: ",",
-                range: {start: 10, end: 11}
+                "type": ",",
+                "value": ",",
+                "tightness": 100,
+                "range": {
+                    "start": 10,
+                    "end": 11
+                }
             },
             {
-                type: Playspecs.Parser.tokenTypes.END,
-                value: "end",
-                range: {start: 12, end: 15}
+                "type": "end",
+                "value": "end",
+                "tightness": 0,
+                "range": {
+                    "start": 12,
+                    "end": 15
+                }
             }
         ],
-        position: 0,
-        errors: []
+        "position": 0,
+        "errors": []
     };
     desc("<p>Parsers are initialized with a context object, explained in the next paragraph. Tokenize returns a " +
             "kind of token stream with a list of tokens and a position index into that list, along with the original " +
@@ -75,6 +91,8 @@
          // `value` is its value; for symbols like `start` it's just the string itself.
          // For e.g. numbers, the value might be the Number represented by the string.
          value: "start",
+         // `tightness` is duplicated from the token definition.
+         tightness: 0,
          // `range` is where this token's first and last characters appear in the string.
          range: {start: 0, end: 5}
          },
@@ -87,36 +105,59 @@
         ex(tokens, expectedTokens);
     });
     expectedTokens = {
-        string: "start bad , -> end",
-        tokens: [
+        "string": "start bad , -> end",
+        "tokens": [
             {
-                type: Playspecs.Parser.tokenTypes.START,
-                value: "start",
-                range: {start: 0, end: 5}
+                "type": "start",
+                "value": "start",
+                "tightness": 0,
+                "range": {
+                    "start": 0,
+                    "end": 5
+                }
             },
             {
-                type: Playspecs.Parser.tokenTypes.ERROR,
-                value: "bad",
-                range: {start: 6, end: 9}
+                "type": "error",
+                "value": "bad",
+                "tightness": 0,
+                "range": {
+                    "start": 6,
+                    "end": 9
+                }
             },
             {
-                type: Playspecs.Parser.tokenTypes.CONCATENATION,
-                value: ",",
-                range: {start: 10, end: 11}
+                "type": ",",
+                "value": ",",
+                "tightness": 100,
+                "range": {
+                    "start": 10,
+                    "end": 11
+                }
             },
             {
-                type: Playspecs.Parser.tokenTypes.ERROR,
-                value: "->",
-                range: {start: 12, end: 14}
+                "type": "error",
+                "value": "->",
+                "tightness": 0,
+                "range": {
+                    "start": 12,
+                    "end": 14
+                }
             },
             {
-                type: Playspecs.Parser.tokenTypes.END,
-                value: "end",
-                range: {start: 15, end: 18}
-            },
+                "type": "end",
+                "value": "end",
+                "tightness": 0,
+                "range": {
+                    "start": 15,
+                    "end": 18
+                }
+            }
         ],
-        position: 0,
-        errors: [1, 3]
+        "position": 0,
+        "errors": [
+            1,
+            3
+        ]
     };
     desc("<p>In case of an error, the unrecognized tokens are handled as well as possible and returned in the stream " +
             "object's <code>errors</code> field.</p>", function () {
@@ -175,24 +216,27 @@
         "string": "start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end",
         "tokens": [
             {
-                "type": Playspecs.Parser.tokenTypes.START,
+                "type": "start",
                 "value": "start",
+                "tightness": 0,
                 "range": {
                     "start": 0,
                     "end": 5
                 }
             },
             {
-                "type": Playspecs.Parser.tokenTypes.CONCATENATION,
+                "type": ",",
                 "value": ",",
+                "tightness": 100,
                 "range": {
                     "start": 5,
                     "end": 6
                 }
             },
             {
-                "type": Playspecs.Parser.tokenTypes.NOT,
+                "type": "not",
                 "value": "not",
+                "tightness": 220,
                 "range": {
                     "start": 7,
                     "end": 10
@@ -201,6 +245,7 @@
             {
                 "type": "PERSON",
                 "value": "Chloe",
+                "tightness": 300,
                 "range": {
                     "start": 11,
                     "end": 16
@@ -209,6 +254,7 @@
             {
                 "type": "LINK",
                 "value": "-",
+                "tightness": 301,
                 "range": {
                     "start": 16,
                     "end": 17
@@ -217,6 +263,7 @@
             {
                 "type": "RELATIONSHIP",
                 "value": "dating",
+                "tightness": 300,
                 "range": {
                     "start": 17,
                     "end": 23
@@ -225,6 +272,7 @@
             {
                 "type": "LINK",
                 "value": "-",
+                "tightness": 301,
                 "range": {
                     "start": 23,
                     "end": 24
@@ -233,26 +281,29 @@
             {
                 "type": "PERSON",
                 "value": "Doug",
+                "tightness": 300,
                 "range": {
                     "start": 24,
                     "end": 28
                 }
             },
             {
-                "type": Playspecs.Parser.tokenTypes.DOTS_GREEDY,
+                "type": "...",
                 "value": {
-                    greedy: true,
-                    lowerBound: 0,
-                    upperBound: "$END"
+                    "greedy": true,
+                    "lowerBound": 0,
+                    "upperBound": "$END"
                 },
+                "tightness": 110,
                 "range": {
                     "start": 29,
                     "end": 32
                 }
             },
             {
-                "type": Playspecs.Parser.tokenTypes.CONCATENATION,
+                "type": ",",
                 "value": ",",
+                "tightness": 100,
                 "range": {
                     "start": 32,
                     "end": 33
@@ -261,6 +312,7 @@
             {
                 "type": "PERSON",
                 "value": "Doug",
+                "tightness": 300,
                 "range": {
                     "start": 34,
                     "end": 38
@@ -269,6 +321,7 @@
             {
                 "type": "LINK",
                 "value": "-",
+                "tightness": 301,
                 "range": {
                     "start": 38,
                     "end": 39
@@ -277,6 +330,7 @@
             {
                 "type": "RELATIONSHIP",
                 "value": "embarrassed",
+                "tightness": 300,
                 "range": {
                     "start": 39,
                     "end": 50
@@ -285,6 +339,7 @@
             {
                 "type": "LINK",
                 "value": "-",
+                "tightness": 301,
                 "range": {
                     "start": 50,
                     "end": 51
@@ -293,22 +348,25 @@
             {
                 "type": "PERSON",
                 "value": "Chloe",
+                "tightness": 300,
                 "range": {
                     "start": 51,
                     "end": 56
                 }
             },
             {
-                "type": Playspecs.Parser.tokenTypes.AND,
+                "type": "&",
                 "value": "&",
+                "tightness": 200,
                 "range": {
                     "start": 57,
                     "end": 58
                 }
             },
             {
-                "type": Playspecs.Parser.tokenTypes.END,
+                "type": "end",
                 "value": "end",
+                "tightness": 0,
                 "range": {
                     "start": 59,
                     "end": 62
@@ -334,9 +392,11 @@
                 },
                 {
                     type: "LINK",
-                    match: "-"
+                    match: "-",
+                    // Custom tokens have their own precedence scale and always bind tighter than built-in ones.
+                    tightness: 1
                 }
-                //Also: networks, inequalities, numbers
+                // Also: networks, inequalities, numbers
             ]
         });
         var tokens = parser.tokenize("start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end");
@@ -367,7 +427,393 @@
     a parse-starting or parse-extending position but does not define <code>startParse</code> or <code>extendParse</code>
     (respectively), the default behavior is to signal a syntax error.</p>
 
-<p>examples...</p>
+<script>
+    var expectedParseResult = {
+        "tree": {
+            "type": ",",
+            "value": ",",
+            "children": [
+                {
+                    "type": "start",
+                    "value": "start",
+                    "children": [],
+                    "range": {
+                        "start": 0,
+                        "end": 5
+                    }
+                },
+                {
+                    "type": ",",
+                    "value": ",",
+                    "children": [
+                        {
+                            "type": "...",
+                            "value": {
+                                "greedy": true,
+                                "lowerBound": 0,
+                                "upperBound": "$END"
+                            },
+                            "children": [
+                                {
+                                    "type": "not",
+                                    "value": "not",
+                                    "children": [
+                                        {
+                                            "type": "LINK_RELATIONSHIP",
+                                            "children": [
+                                                {
+                                                    "type": "PERSON",
+                                                    "value": "Chloe",
+                                                    "children": [],
+                                                    "range": {
+                                                        "start": 11,
+                                                        "end": 16
+                                                    }
+                                                },
+                                                {
+                                                    "type": "RELATIONSHIP",
+                                                    "value": "dating",
+                                                    "children": [],
+                                                    "range": {
+                                                        "start": 17,
+                                                        "end": 23
+                                                    }
+                                                },
+                                                {
+                                                    "type": "PERSON",
+                                                    "value": "Doug",
+                                                    "children": [],
+                                                    "range": {
+                                                        "start": 24,
+                                                        "end": 29
+                                                    }
+                                                }
+                                            ],
+                                            "range": {
+                                                "start": 11,
+                                                "end": 29
+                                            }
+                                        }
+                                    ],
+                                    "range": {
+                                        "start": 7,
+                                        "end": 29
+                                    }
+                                }
+                            ],
+                            "range": {
+                                "start": 7,
+                                "end": 32
+                            }
+                        },
+                        {
+                            "type": "&",
+                            "value": "&",
+                            "children": [
+                                {
+                                    "type": "LINK_RELATIONSHIP",
+                                    "children": [
+                                        {
+                                            "type": "PERSON",
+                                            "value": "Doug",
+                                            "children": [],
+                                            "range": {
+                                                "start": 34,
+                                                "end": 38
+                                            }
+                                        },
+                                        {
+                                            "type": "RELATIONSHIP",
+                                            "value": "embarrassed",
+                                            "children": [],
+                                            "range": {
+                                                "start": 39,
+                                                "end": 50
+                                            }
+                                        },
+                                        {
+                                            "type": "PERSON",
+                                            "value": "Chloe",
+                                            "children": [],
+                                            "range": {
+                                                "start": 51,
+                                                "end": 57
+                                            }
+                                        }
+                                    ],
+                                    "range": {
+                                        "start": 34,
+                                        "end": 57
+                                    }
+                                },
+                                {
+                                    "type": "end",
+                                    "value": "end",
+                                    "children": [],
+                                    "range": {
+                                        "start": 59,
+                                        "end": 62
+                                    }
+                                }
+                            ],
+                            "range": {
+                                "start": 34,
+                                "end": 62
+                            }
+                        }
+                    ],
+                    "range": {
+                        "start": 7,
+                        "end": 62
+                    }
+                }
+            ],
+            "range": {
+                "start": 0,
+                "end": 62
+            }
+        },
+        "errors": [],
+        "remainder": ""
+    };
+    desc("<p>Returning to Prom Week, let's implement parsers for the three token types we saw before. " +
+            "<code>PERSON</code> and <code>RELATIONSHIP</code> are inert values, so we can implement " +
+            "<code>startParse</code> using <code>Parser.parseValue</code> as a convenient shorthand. Another useful" +
+            "shortcut to remember is <code>Parser.parseInfixR</code> for right-associative infix operators, though" +
+            "it won't come up in this example. The <code>LINK</code> token type, however, is a kind of ternary " +
+            "operator, so we must parse it by hand with several recursive calls to <code>Parser/parseExpression</code>." +
+            "Note that <code>LINK</code> cannot appear at the beginning of a parse, so it only provides " +
+            "<code>extendParse</code>.</p>", function () {
+        var parser = new Playspecs.Parser.Parser({
+            tokens: [
+                {
+                    type: "PERSON",
+                    match: ["Chloe", "Simon", "Phoebe", "Doug"/*, ... */],
+                    startParse: Playspecs.Parser.parseValue
+                },
+                {
+                    type: "RELATIONSHIP",
+                    match: ["dating", "friends", "enemies", "embarrassed"/*, ... */],
+                    startParse: Playspecs.Parser.parseValue
+                },
+                {
+                    type: "LINK",
+                    match: "-",
+                    // Custom tokens have their own precedence scale and always bind tighter than built-in ones.
+                    tightness: 1,
+                    extendParse: function (parser, parseTree, token) {
+                        var left = parseTree;
+                        if (left.type != "PERSON") {
+                            return parser.error("Left hand side of LINK must be PERSON", token, parseTree);
+                        }
+                        // Links are not associative, so we must parse at a higher tightness.
+                        // In other words, this call to parseExpression will never try to extend the given parse
+                        // using a LINK or any lower-precedence term.
+                        var relationship = parser.parseExpression(token.tightness);
+                        // A real implementation would handle inequalities over network values too.
+                        if (relationship.type != "RELATIONSHIP") {
+                            return parser.error("Middle term of LINK must be RELATIONSHIP", token, relationship);
+                        }
+                        // We need to examine the next token without running parseExpression again to know if the
+                        // LINK syntax is being used correctly.
+                        var current = parser.currentToken();
+                        if (current.type != "LINK") {
+                            return parser.error(
+                                    "A second LINK token must appear after the middle term of a LINK",
+                                    current
+                            );
+                        }
+                        parser.advance();
+                        var right = parser.parseExpression(token.tightness + 1);
+                        if (right.type != "PERSON") {
+                            return parser.error("Right hand side of LINK must be PERSON", token, right);
+                        }
+                        // We'll keep all three parse trees around to maintain location information, etc.
+                        return parser.node("LINK_RELATIONSHIP", undefined, [left, relationship, right]);
+                    }
+                }
+                // Also: networks, inequalities, numbers
+            ]
+        });
+        var parseResult = parser.parse("start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end");
+        ex(parseResult, expectedParseResult);
+    });
+    var promWeekContext = {
+        tokens: [
+            {
+                type: "PERSON",
+                match: ["Chloe", "Simon", "Phoebe", "Doug"/*, ... */],
+                startParse: Playspecs.Parser.parseValue
+            },
+            {
+                type: "RELATIONSHIP",
+                match: ["dating", "friends", "enemies", "embarrassed"/*, ... */],
+                startParse: Playspecs.Parser.parseValue
+            },
+            {
+                type: "LINK",
+                match: "-",
+                // Custom tokens have their own precedence scale and always bind tighter than built-in ones.
+                tightness: 1,
+                extendParse: function (parser, parseTree, token) {
+                    var left = parseTree;
+                    if (left.type != "PERSON") {
+                        return parser.error("Left hand side of LINK must be PERSON", token, parseTree);
+                    }
+                    // Links are not associative, so we must parse at a higher tightness.
+                    // In other words, this call to parseExpression will never try to extend the given parse
+                    // using a LINK or any lower-precedence term.
+                    var relationship = parser.parseExpression(token.tightness);
+                    // A real implementation would handle inequalities over network values too.
+                    if (relationship.type != "RELATIONSHIP") {
+                        return parser.error("Middle term of LINK must be RELATIONSHIP", token, relationship);
+                    }
+                    // We need to examine the next token without running parseExpression again to know if the
+                    // LINK syntax is being used correctly.
+                    var current = parser.currentToken();
+                    if (current.type != "LINK") {
+                        return parser.error(
+                                "A second LINK token must appear after the middle term of a LINK",
+                                current
+                        );
+                    }
+                    parser.advance();
+                    var right = parser.parseExpression(token.tightness + 1);
+                    if (right.type != "PERSON") {
+                        return parser.error("Right hand side of LINK must be PERSON", token, right);
+                    }
+                    // We'll keep all three parse trees around to maintain location information, etc.
+                    return parser.node("LINK_RELATIONSHIP", undefined, [left, relationship, right]);
+                }
+            }
+            // Also: networks, inequalities, numbers
+        ]
+    };
+    expectedParseResult = {
+        "tree": {
+            "type": "ERROR",
+            "value": {
+                "message": "Left hand side of LINK must be PERSON",
+                "token": {
+                    "type": "LINK",
+                    "value": "-",
+                    "tightness": 301,
+                    "range": {
+                        "start": 17,
+                        "end": 18
+                    }
+                },
+                "tree": {
+                    "type": "LINK_RELATIONSHIP",
+                    "children": [
+                        {
+                            "type": "PERSON",
+                            "value": "Chloe",
+                            "children": [],
+                            "range": {
+                                "start": 0,
+                                "end": 5
+                            }
+                        },
+                        {
+                            "type": "RELATIONSHIP",
+                            "value": "dating",
+                            "children": [],
+                            "range": {
+                                "start": 6,
+                                "end": 12
+                            }
+                        },
+                        {
+                            "type": "PERSON",
+                            "value": "Doug",
+                            "children": [],
+                            "range": {
+                                "start": 13,
+                                "end": 17
+                            }
+                        }
+                    ],
+                    "range": {
+                        "start": 0,
+                        "end": 17
+                    }
+                }
+            },
+            "children": [],
+            "range": {
+                "start": 0,
+                "end": 18
+            }
+        },
+        "errors": [
+            {
+                "type": "ERROR",
+                "value": {
+                    "message": "Left hand side of LINK must be PERSON",
+                    "token": {
+                        "type": "LINK",
+                        "value": "-",
+                        "tightness": 301,
+                        "range": {
+                            "start": 17,
+                            "end": 18
+                        }
+                    },
+                    "tree": {
+                        "type": "LINK_RELATIONSHIP",
+                        "children": [
+                            {
+                                "type": "PERSON",
+                                "value": "Chloe",
+                                "children": [],
+                                "range": {
+                                    "start": 0,
+                                    "end": 5
+                                }
+                            },
+                            {
+                                "type": "RELATIONSHIP",
+                                "value": "dating",
+                                "children": [],
+                                "range": {
+                                    "start": 6,
+                                    "end": 12
+                                }
+                            },
+                            {
+                                "type": "PERSON",
+                                "value": "Doug",
+                                "children": [],
+                                "range": {
+                                    "start": 13,
+                                    "end": 17
+                                }
+                            }
+                        ],
+                        "range": {
+                            "start": 0,
+                            "end": 17
+                        }
+                    }
+                },
+                "children": [],
+                "range": {
+                    "start": 0,
+                    "end": 18
+                }
+            }
+        ],
+        "remainder": "embarrassed-Simon"
+    };
+    desc("<p>Parse errors are placed directly into the tree and also appear in a separate list. In this case, the " +
+            "<code>LINK_RELATIONSHIP</code> tree can't be extended by another <code>LINK</code>. The parse " +
+            "terminates right away, leaving the remainder of the string alone.</p>", function() {
+        var parser = new Playspecs.Parser.Parser(promWeekContext);
+        var parseResult = parser.parse("Chloe-dating-Doug-embarrassed-Simon");
+        ex(parseResult, expectedParseResult);
+    });
+</script>
 
 </body>
 </html>

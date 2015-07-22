@@ -52,6 +52,8 @@ type TokenDefinition = Array < {
 type Token = {
     type: string,
     value: any,
+    // A bit redundant, but makes defining generic startParse/extendParse functions easier.
+    tightness: number,
     range: {start: number, end: number}
 };
 
@@ -69,17 +71,17 @@ type TokenStream = {
     errors: Array < number >
 };
 
-export const parseValue = function (parser:Parser, token:Token) {
-    return parser.node(token.type, token.value);
-};
-
 export const constantValue = function(c:any) {
     return function(_mr:MatchResult) { return c; }
 };
 
+export const parseValue = function (parser:Parser, token:Token) {
+    return parser.node(token.type, token.value);
+};
+
 export const parseInfixR = function (parser:Parser, left:ParseTree, token:Token) {
     let children = [left];
-    children.push(parser.parseExpression(token.tightness));
+    children.push(parser.parseExpression(token.tightness-1));
     return parser.node(token.type, token.value, children);
 };
 
@@ -88,7 +90,7 @@ export const parseInfixRPropositional = function (parser:Parser, left:ParseTree,
         return parser.error("Left hand side of token must be propositional", token, left);
     }
     let children = [left];
-    const right = parser.parseExpression(token.tightness);
+    const right = parser.parseExpression(token.tightness-1);
     if (!parser.isPropositional(right)) {
         return parser.error("Right hand side of token must be propositional", token, right);
     }
@@ -240,6 +242,8 @@ export const standardTokens:Array<TokenSchema> = [
     }
 ];
 
+const customTightnessOffset = 300;
+
 const ERROR = "ERROR";
 
 function isString(s:any):bool {
@@ -255,13 +259,14 @@ export class Parser {
         const tokens = customTokens.concat(standardTokens);
         for (let ti = 0; ti < tokens.length; ti++) {
             const input = tokens[ti];
+            const tightness = input.tightness || 0;
             const defn = {
                 type: input.type,
                 match: isString(input.match) ? [input.match] : input.match,
                 value: input.value || function (mr) {
                     return mr[0];
                 },
-                tightness: input.tightness || 0,
+                tightness: ti < customTokens.length ? tightness+customTightnessOffset : tightness,
                 startParse: input.startParse || function (parser, token) {
                     return parser.error("Can't start a parse tree with this token", token);
                 },
@@ -318,6 +323,7 @@ export class Parser {
                         result.push({
                             type: tokenDefinition.type,
                             value: tokenDefinition.value(matchResult),
+                            tightness: tokenDefinition.tightness,
                             range: {start: oldIndex, end: index}
                         });
                     }
@@ -378,9 +384,12 @@ export class Parser {
 
     parseExpression(tightness:number):ParseTree {
         let token = this.currentToken();
+        let tokenDef = this.tokensByType[token.type];
         const start = token.range.start;
+        console.log("parse token "+token.type);
         this.advance();
-        let tree = token.startParse(this, token);
+        let tree = tokenDef.startParse(this, token);
+        console.log("Parsed unit "+tree.type);
         tree.range.start = start;
         tree.range.end = this.charPosition();
         if (tree.type == ERROR) {
@@ -388,8 +397,11 @@ export class Parser {
         }
         token = this.currentToken();
         while (token && tightness < token.tightness) {
+            tokenDef = this.tokensByType[token.type];
             this.advance();
-            let newTree = token.extendParse(this, tree, token);
+            console.log("Extend "+tree.type+" using "+token.type);
+            let newTree = tokenDef.extendParse(this, tree, token);
+            console.log("Got "+newTree.type);
             newTree.range.start = tree.range.start;
             newTree.range.end = this.charPosition();
             if (newTree.type == ERROR) {

@@ -52,13 +52,17 @@ var Playspecs =
 	});
 	exports.hi = hi;
 	
+	function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj["default"] = obj; return newObj; } }
+	
 	var _parser = __webpack_require__(1);
+	
+	var Parser = _interopRequireWildcard(_parser);
 	
 	function hi() {
 	    console.log("hello there");
 	}
 	
-	exports.Parser = { Parser: _parser.Parser, tokenTypes: _parser.tokenTypes };
+	exports.Parser = Parser;
 	
 	//const Parser = require("parser.js").Parser;
 	//
@@ -122,11 +126,6 @@ var Playspecs =
 	};
 	
 	exports.parseTypes = parseTypes;
-	var parseValue = function parseValue(parser, token) {
-	    return parser.node(token.type, token.value);
-	};
-	
-	exports.parseValue = parseValue;
 	var constantValue = function constantValue(c) {
 	    return function (_mr) {
 	        return c;
@@ -134,9 +133,14 @@ var Playspecs =
 	};
 	
 	exports.constantValue = constantValue;
+	var parseValue = function parseValue(parser, token) {
+	    return parser.node(token.type, token.value);
+	};
+	
+	exports.parseValue = parseValue;
 	var parseInfixR = function parseInfixR(parser, left, token) {
 	    var children = [left];
-	    children.push(parser.parseExpression(token.tightness));
+	    children.push(parser.parseExpression(token.tightness - 1));
 	    return parser.node(token.type, token.value, children);
 	};
 	
@@ -146,7 +150,7 @@ var Playspecs =
 	        return parser.error("Left hand side of token must be propositional", token, left);
 	    }
 	    var children = [left];
-	    var right = parser.parseExpression(token.tightness);
+	    var right = parser.parseExpression(token.tightness - 1);
 	    if (!parser.isPropositional(right)) {
 	        return parser.error("Right hand side of token must be propositional", token, right);
 	    }
@@ -282,6 +286,8 @@ var Playspecs =
 	}];
 	
 	exports.standardTokens = standardTokens;
+	var customTightnessOffset = 300;
+	
 	var ERROR = "ERROR";
 	
 	function isString(s) {
@@ -299,13 +305,14 @@ var Playspecs =
 	        var tokens = customTokens.concat(standardTokens);
 	        for (var ti = 0; ti < tokens.length; ti++) {
 	            var input = tokens[ti];
+	            var _tightness = input.tightness || 0;
 	            var defn = {
 	                type: input.type,
 	                match: isString(input.match) ? [input.match] : input.match,
 	                value: input.value || function (mr) {
 	                    return mr[0];
 	                },
-	                tightness: input.tightness || 0,
+	                tightness: ti < customTokens.length ? _tightness + customTightnessOffset : _tightness,
 	                startParse: input.startParse || function (parser, token) {
 	                    return parser.error("Can't start a parse tree with this token", token);
 	                },
@@ -371,6 +378,7 @@ var Playspecs =
 	                            result.push({
 	                                type: tokenDefinition.type,
 	                                value: tokenDefinition.value(matchResult),
+	                                tightness: tokenDefinition.tightness,
 	                                range: { start: oldIndex, end: index }
 	                            });
 	                        }
@@ -433,9 +441,12 @@ var Playspecs =
 	        key: "parseExpression",
 	        value: function parseExpression(tightness) {
 	            var token = this.currentToken();
+	            var tokenDef = this.tokensByType[token.type];
 	            var start = token.range.start;
+	            console.log("parse token " + token.type);
 	            this.advance();
-	            var tree = token.startParse(this, token);
+	            var tree = tokenDef.startParse(this, token);
+	            console.log("Parsed unit " + tree.type);
 	            tree.range.start = start;
 	            tree.range.end = this.charPosition();
 	            if (tree.type == ERROR) {
@@ -443,8 +454,11 @@ var Playspecs =
 	            }
 	            token = this.currentToken();
 	            while (token && tightness < token.tightness) {
+	                tokenDef = this.tokensByType[token.type];
 	                this.advance();
-	                var newTree = token.extendParse(this, tree, token);
+	                console.log("Extend " + tree.type + " using " + token.type);
+	                var newTree = tokenDef.extendParse(this, tree, token);
+	                console.log("Got " + newTree.type);
 	                newTree.range.start = tree.range.start;
 	                newTree.range.end = this.charPosition();
 	                if (newTree.type == ERROR) {
@@ -461,6 +475,8 @@ var Playspecs =
 	})();
 	
 	exports.Parser = Parser;
+	
+	// A bit redundant, but makes defining generic startParse/extendParse functions easier.
 
 /***/ }
 /******/ ]);

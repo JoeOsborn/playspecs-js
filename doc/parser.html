@@ -20,93 +20,114 @@
     game-independent Playspecs syntax, and can tokenize certain simple specs on its own (this core syntax is defined in
     <a href="resources/paper.pdf">the AIIDE paper</a>). Whitespace is ignored except as it separates other tokens.</p>
 <script>
-    desc("", function () {
-        // Parsers are initialized with a context object, explained in the next paragraph.
+    var expectedTokens = {
+        string: "start, ..., end",
+        tokens: [
+            {
+                // `type` is the kind of Token this is. It is duplicated from the definition for convenience.
+                type: Playspecs.Parser.tokenTypes.START,
+                // `value` is its value; for symbols like `start` it's just the string itself.
+                // For e.g. numbers, the value might be the Number represented by the string.
+                value: "start",
+                // `range` is where this token is found in the string in terms of first and last character positions.
+                range: {start: 0, end: 5}
+            },
+            {
+                type: Playspecs.Parser.tokenTypes.CONCATENATION,
+                value: ",",
+                range: {start: 5, end: 6}
+            },
+            {
+                type: Playspecs.Parser.tokenTypes.DOTS_GREEDY,
+                value: {
+                    greedy: true,
+                    lowerBound: 0,
+                    upperBound: "$END"
+                },
+                range: {start: 7, end: 10}
+            },
+            {
+                type: Playspecs.Parser.tokenTypes.CONCATENATION,
+                value: ",",
+                range: {start: 10, end: 11}
+            },
+            {
+                type: Playspecs.Parser.tokenTypes.END,
+                value: "end",
+                range: {start: 12, end: 15}
+            }
+        ],
+        position: 0,
+        errors: []
+    };
+    desc("<p>Parsers are initialized with a context object, explained in the next paragraph. Tokenize returns a " +
+            "kind of token stream with a list of tokens and a position index into that list, along with the original " +
+            "string in case the eventual parse doesn't use up the whole string.</p>", function () {
         var parser = new Playspecs.Parser.Parser({});
-        // Tokenize returns a kind of token stream with a list of tokens and a position index into that list.
-        // It also returns the original string in case the eventual parse doesn't use up the whole string.
         var tokens = parser.tokenize("start, ..., end");
-        // It should look like this:
-        var expected = {
-            string: "start, ..., end",
-            tokens: [
-                {
-                    // `type` is the kind of Token this is. It is duplicated from the definition for convenience.
-                    type: Playspecs.Parser.tokenTypes.START,
-                    // `value` is its value; for symbols like `start` it's just the string itself.
-                    // For e.g. numbers, the value might be the Number represented by the string.
-                    value: "start",
-                    // `range` is where this token is found in the string in terms of first and last character positions.
-                    range: {start: 0, end: 5}
-                },
-                {
-                    type: Playspecs.Parser.tokenTypes.CONCATENATION,
-                    value: ",",
-                    range: {start: 5, end: 6}
-                },
-                {
-                    type: Playspecs.Parser.tokenTypes.DOTS_GREEDY,
-                    value: "...",
-                    range: {start: 7, end: 10}
-                },
-                {
-                    type: Playspecs.Parser.tokenTypes.CONCATENATION,
-                    value: ",",
-                    range: {start: 10, end: 11}
-                },
-                {
-                    type: Playspecs.Parser.tokenTypes.END,
-                    value: "end",
-                    range: {start: 12, end: 15}
-                }
-            ],
-            position: 0,
-            errors: []
-        };
-        ex(tokens, expected);
+        /*The result should look like this:
+         var expectedTokens = {
+         string: "start, ..., end",
+         tokens: [
+         {
+         // `type` is the kind of Token this is. It is duplicated from the definition for convenience.
+         type: Playspecs.Parser.tokenTypes.START,
+         // `value` is its value; for symbols like `start` it's just the string itself.
+         // For e.g. numbers, the value might be the Number represented by the string.
+         value: "start",
+         // `range` is where this token's first and last characters appear in the string.
+         range: {start: 0, end: 5}
+         },
+         ... more tokens ...
+         ],
+         position: 0,
+         errors: []
+         };
+         */
+        ex(tokens, expectedTokens);
     });
+    expectedTokens = {
+        string: "start bad , -> end",
+        tokens: [
+            {
+                type: Playspecs.Parser.tokenTypes.START,
+                value: "start",
+                range: {start: 0, end: 5}
+            },
+            {
+                type: Playspecs.Parser.tokenTypes.ERROR,
+                value: "bad",
+                range: {start: 6, end: 9}
+            },
+            {
+                type: Playspecs.Parser.tokenTypes.CONCATENATION,
+                value: ",",
+                range: {start: 10, end: 11}
+            },
+            {
+                type: Playspecs.Parser.tokenTypes.ERROR,
+                value: "->",
+                range: {start: 12, end: 14}
+            },
+            {
+                type: Playspecs.Parser.tokenTypes.END,
+                value: "end",
+                range: {start: 15, end: 18}
+            },
+        ],
+        position: 0,
+        errors: [1, 3]
+    };
     desc("<p>In case of an error, the unrecognized tokens are handled as well as possible and returned in the stream " +
             "object's <code>errors</code> field.</p>", function () {
         var parser = new Playspecs.Parser.Parser({});
         var tokens = parser.tokenize("start bad , -> end");
-        var expected = {
-            string: "start bad , -> end",
-            tokens: [
-                {
-                    type: Playspecs.Parser.tokenTypes.START,
-                    value: "start",
-                    range: {start: 0, end: 5}
-                },
-                {
-                    type: Playspecs.Parser.tokenTypes.ERROR,
-                    value: "bad",
-                    range: {start: 6, end: 9}
-                },
-                {
-                    type: Playspecs.Parser.tokenTypes.CONCATENATION,
-                    value: ",",
-                    range: {start: 10, end: 11}
-                },
-                {
-                    type: Playspecs.Parser.tokenTypes.ERROR,
-                    value: "->",
-                    range: {start: 12, end: 14}
-                },
-                {
-                    type: Playspecs.Parser.tokenTypes.END,
-                    value: "end",
-                    range: {start: 15, end: 18}
-                },
-            ],
-            position: 0,
-            errors: [1, 3]
-        };
-        ex(tokens, expected);
+        ex(tokens, expectedTokens);
     });
 </script>
 <p>The reference implementation tokenizes the entire string at once for clarity and simplicity. If the string to be
     parsed is large and contains something besides a Playspec at the beginning, or the Playspec is followed by a
-    substantial amount of text, this could be very inefficient. If this is important to your use case, you should
+    substantial amount of text, this could be inefficient. If this is important to your use case, you should
     redefine the <code>TokenStream</code> type to contain the current token and the unparsed remainder of
     the string, and reimplement <code>Parser.tokenize</code>, <code>Parser.advance</code>,
     <code>Parser.currentToken</code>, and <code>Parser.remainder</code> to tokenize as
@@ -121,7 +142,8 @@
     tokens: [
         {
             type: "TOKEN_TYPE_A",
-            match: Regex | [String], /* All remaining fields are optional. */
+            match: Regex | String | [String],
+            // The following fields are optional.
             [value: (MatchResult)=>any /* MatchResult is like the result of RegExp.exec() */,]
             [tightness: int,]
             [startParse: (Parser, Token)=>any /* Token is of type TOKEN_TYPE_A. Pratt's "nud". */ ,]
@@ -149,6 +171,153 @@
     is token-directed, and since this reference implementation does not support extending existing tokens'
     <code>startParse</code> and <code>extendParse</code> functions, ambiguities are best avoided.</p>
 <script>
+    var expectedTokens = {
+        "string": "start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end",
+        "tokens": [
+            {
+                "type": Playspecs.Parser.tokenTypes.START,
+                "value": "start",
+                "range": {
+                    "start": 0,
+                    "end": 5
+                }
+            },
+            {
+                "type": Playspecs.Parser.tokenTypes.CONCATENATION,
+                "value": ",",
+                "range": {
+                    "start": 5,
+                    "end": 6
+                }
+            },
+            {
+                "type": Playspecs.Parser.tokenTypes.NOT,
+                "value": "not",
+                "range": {
+                    "start": 7,
+                    "end": 10
+                }
+            },
+            {
+                "type": "PERSON",
+                "value": "Chloe",
+                "range": {
+                    "start": 11,
+                    "end": 16
+                }
+            },
+            {
+                "type": "LINK",
+                "value": "-",
+                "range": {
+                    "start": 16,
+                    "end": 17
+                }
+            },
+            {
+                "type": "RELATIONSHIP",
+                "value": "dating",
+                "range": {
+                    "start": 17,
+                    "end": 23
+                }
+            },
+            {
+                "type": "LINK",
+                "value": "-",
+                "range": {
+                    "start": 23,
+                    "end": 24
+                }
+            },
+            {
+                "type": "PERSON",
+                "value": "Doug",
+                "range": {
+                    "start": 24,
+                    "end": 28
+                }
+            },
+            {
+                "type": Playspecs.Parser.tokenTypes.DOTS_GREEDY,
+                "value": {
+                    greedy: true,
+                    lowerBound: 0,
+                    upperBound: "$END"
+                },
+                "range": {
+                    "start": 29,
+                    "end": 32
+                }
+            },
+            {
+                "type": Playspecs.Parser.tokenTypes.CONCATENATION,
+                "value": ",",
+                "range": {
+                    "start": 32,
+                    "end": 33
+                }
+            },
+            {
+                "type": "PERSON",
+                "value": "Doug",
+                "range": {
+                    "start": 34,
+                    "end": 38
+                }
+            },
+            {
+                "type": "LINK",
+                "value": "-",
+                "range": {
+                    "start": 38,
+                    "end": 39
+                }
+            },
+            {
+                "type": "RELATIONSHIP",
+                "value": "embarrassed",
+                "range": {
+                    "start": 39,
+                    "end": 50
+                }
+            },
+            {
+                "type": "LINK",
+                "value": "-",
+                "range": {
+                    "start": 50,
+                    "end": 51
+                }
+            },
+            {
+                "type": "PERSON",
+                "value": "Chloe",
+                "range": {
+                    "start": 51,
+                    "end": 56
+                }
+            },
+            {
+                "type": Playspecs.Parser.tokenTypes.AND,
+                "value": "&",
+                "range": {
+                    "start": 57,
+                    "end": 58
+                }
+            },
+            {
+                "type": Playspecs.Parser.tokenTypes.END,
+                "value": "end",
+                "range": {
+                    "start": 59,
+                    "end": 62
+                }
+            }
+        ],
+        "position": 0,
+        "errors": []
+    };
     desc("<p>For Prom Week, we want to describe network links and current relationships between characters. These " +
             "are mostly directional (though there are some bidirectional relationships), so we use a sort of labeled " +
             "edge syntax with an implied left-to-right orientation. Our token types are people, relationships, " +
@@ -170,151 +339,8 @@
                 //Also: networks, inequalities, numbers
             ]
         });
-        var tokens = parser.tokenize("start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end")
-        var expected = {
-            "string": "start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end",
-            "tokens": [
-                {
-                    "type": "start",
-                    "value": "start",
-                    "range": {
-                        "start": 0,
-                        "end": 5
-                    }
-                },
-                {
-                    "type": ",",
-                    "value": ",",
-                    "range": {
-                        "start": 5,
-                        "end": 6
-                    }
-                },
-                {
-                    "type": "not",
-                    "value": "not",
-                    "range": {
-                        "start": 7,
-                        "end": 10
-                    }
-                },
-                {
-                    "type": "PERSON",
-                    "value": "Chloe",
-                    "range": {
-                        "start": 11,
-                        "end": 16
-                    }
-                },
-                {
-                    "type": "LINK",
-                    "value": "-",
-                    "range": {
-                        "start": 16,
-                        "end": 17
-                    }
-                },
-                {
-                    "type": "RELATIONSHIP",
-                    "value": "dating",
-                    "range": {
-                        "start": 17,
-                        "end": 23
-                    }
-                },
-                {
-                    "type": "LINK",
-                    "value": "-",
-                    "range": {
-                        "start": 23,
-                        "end": 24
-                    }
-                },
-                {
-                    "type": "PERSON",
-                    "value": "Doug",
-                    "range": {
-                        "start": 24,
-                        "end": 28
-                    }
-                },
-                {
-                    "type": "...",
-                    "value": "...",
-                    "range": {
-                        "start": 29,
-                        "end": 32
-                    }
-                },
-                {
-                    "type": ",",
-                    "value": ",",
-                    "range": {
-                        "start": 32,
-                        "end": 33
-                    }
-                },
-                {
-                    "type": "PERSON",
-                    "value": "Doug",
-                    "range": {
-                        "start": 34,
-                        "end": 38
-                    }
-                },
-                {
-                    "type": "LINK",
-                    "value": "-",
-                    "range": {
-                        "start": 38,
-                        "end": 39
-                    }
-                },
-                {
-                    "type": "RELATIONSHIP",
-                    "value": "embarrassed",
-                    "range": {
-                        "start": 39,
-                        "end": 50
-                    }
-                },
-                {
-                    "type": "LINK",
-                    "value": "-",
-                    "range": {
-                        "start": 50,
-                        "end": 51
-                    }
-                },
-                {
-                    "type": "PERSON",
-                    "value": "Chloe",
-                    "range": {
-                        "start": 51,
-                        "end": 56
-                    }
-                },
-                {
-                    "type": "&",
-                    "value": "&",
-                    "range": {
-                        "start": 57,
-                        "end": 58
-                    }
-                },
-                {
-                    "type": "end",
-                    "value": "end",
-                    "range": {
-                        "start": 59,
-                        "end": 62
-                    }
-                }
-            ],
-            "position": 0,
-            "errors": []
-        };
-        ex(tokens, expected);
+        var tokens = parser.tokenize("start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end");
+        ex(tokens, expectedTokens);
     });
 </script>
 <h2>Parsing</h2>
@@ -333,10 +359,15 @@
     might recurse into <code>parseExpression</code>, possibly with a different <code>tightness</code>) and the current
     parse tree is replaced by its result. If not, the current parse tree is returned.</p>
 
-<p><code>ParseTree</code> nodes are constructed automatically by the <code>Parser</code> machinery. Character ranges are
-    associated with each node based on the consumed tokens. Errors are a special kind of parse node constructed by a
-    method on <code>Parser</code>, and they are placed into the tree where the error occurs. They are also recorded in
-    the <code>errors</code> field of <code>Parser</code> and returned along with the final parse tree and the remainder
-    of the string.</p>
+<p><code>ParseTree</code> nodes are constructed via the <code>Parser.node</code> method, which implementations of
+    <code>startParse</code> and <code>extendParse</code> should call. Character ranges are associated with each node
+    based on the consumed tokens. Errors are a special kind of parse node constructed by <code>Parser.error</code>, and
+    they are placed into the tree where the error occurs. They are also recorded in the <code>errors</code> field of
+    <code>Parser</code> and returned along with the final parse tree and the remainder of the string. If a token is in
+    a parse-starting or parse-extending position but does not define <code>startParse</code> or <code>extendParse</code>
+    (respectively), the default behavior is to signal a syntax error.</p>
+
+<p>examples...</p>
+
 </body>
 </html>

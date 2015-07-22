@@ -98,15 +98,42 @@ var Playspecs =
 	    NOT: "not",
 	    START: "start",
 	    END: "end",
+	    TRUE: "true",
+	    FALSE: "false",
 	    ERROR: "error"
 	};
 	
 	exports.tokenTypes = tokenTypes;
+	var parseTypes = {
+	    OMEGA: tokenTypes.OMEGA,
+	    REPETITION: tokenTypes.DOTS_GREEDY,
+	    CONCATENATION: tokenTypes.CONCATENATION,
+	    GROUP: tokenTypes.LEFT_PAREN,
+	    ALTERNATION: tokenTypes.ALTERNATION,
+	    INTERSECTION: tokenTypes.INTERSECTION,
+	    AND: tokenTypes.AND,
+	    OR: tokenTypes.OR,
+	    NOT: tokenTypes.NOT,
+	    START: tokenTypes.START,
+	    END: tokenTypes.END,
+	    TRUE: tokenTypes.TRUE,
+	    FALSE: tokenTypes.FALSE,
+	    ERROR: tokenTypes.ERROR
+	};
+	
+	exports.parseTypes = parseTypes;
 	var parseValue = function parseValue(parser, token) {
 	    return parser.node(token.type, token.value);
 	};
 	
 	exports.parseValue = parseValue;
+	var constantValue = function constantValue(c) {
+	    return function (_mr) {
+	        return c;
+	    };
+	};
+	
+	exports.constantValue = constantValue;
 	var parseInfixR = function parseInfixR(parser, left, token) {
 	    var children = [left];
 	    children.push(parser.parseExpression(token.tightness));
@@ -149,10 +176,12 @@ var Playspecs =
 	        };
 	    },
 	    tightness: 110,
-	    startParse: parseValue,
+	    startParse: function startParse(parser, token) {
+	        return parser.node(parseTypes.REPETITION, token.value, [parser.node(parseTypes.TRUE, true)]);
+	    },
 	    extendParse: function extendParse(parser, left, token) {
 	        //TODO: Handle parse errors
-	        return parser.node(token.type, token, [left]);
+	        return parser.node(parseTypes.REPETITION, token.value, [left]);
 	    }
 	}, {
 	    type: tokenTypes.DOTS_RELUCTANT,
@@ -165,19 +194,23 @@ var Playspecs =
 	            upperBound: matchResult[2] ? parseInt(matchResult[2]) : BOUND_INFINITE
 	        };
 	    },
-	    startParse: parseValue,
+	    startParse: function startParse(parser, token) {
+	        return parser.node(parseTypes.REPETITION, token.value, [parser.node(parseTypes.TRUE, true)]);
+	    },
 	    extendParse: function extendParse(parser, left, token) {
 	        //TODO: Handle parse errors
-	        return parser.node(token.type, token, [left]);
+	        return parser.node(parseTypes.REPETITION, token.value, [left]);
 	    }
 	}, {
 	    type: tokenTypes.DOTS_OMEGA,
 	    match: [tokenTypes.DOTS_OMEGA],
 	    tightness: 110,
-	    startParse: parseValue,
+	    startParse: function startParse(parser, token) {
+	        return parser.node(parseTypes.OMEGA, token.value, [parser.node(parseTypes.TRUE, true)]);
+	    },
 	    extendParse: function extendParse(parser, left, token) {
 	        //TODO: Handle parse errors
-	        return parser.node(token.type, token, [left]);
+	        return parser.node(parseTypes.OMEGA, token.value, [left]);
 	    }
 	}, {
 	    type: tokenTypes.LEFT_PAREN,
@@ -222,7 +255,7 @@ var Playspecs =
 	        if (!parser.isPropositional(phi)) {
 	            return parser.error("NOT may only negate propositional state formulae", token, phi);
 	        }
-	        return parser.node(token.type, token, [phi]);
+	        return parser.node(token.type, token.value, [phi]);
 	    }
 	}, {
 	    type: tokenTypes.START,
@@ -231,6 +264,16 @@ var Playspecs =
 	}, {
 	    type: tokenTypes.END,
 	    match: [tokenTypes.END],
+	    startParse: parseValue
+	}, {
+	    type: tokenTypes.TRUE,
+	    match: [tokenTypes.TRUE],
+	    value: constantValue(true),
+	    startParse: parseValue
+	}, {
+	    type: tokenTypes.FALSE,
+	    match: [tokenTypes.FALSE],
+	    value: constantValue(false),
 	    startParse: parseValue
 	}, {
 	    type: tokenTypes.ERROR,
@@ -289,7 +332,7 @@ var Playspecs =
 	        value: function error(msg, token) {
 	            var tree = arguments.length <= 2 || arguments[2] === undefined ? undefined : arguments[2];
 	
-	            var err = node(ERROR, { message: msg, token: token, tree: tree });
+	            var err = this.node(ERROR, { message: msg, token: token, tree: tree });
 	            this.parseErrors.push(err);
 	            return err;
 	        }
@@ -340,23 +383,15 @@ var Playspecs =
 	    }, {
 	        key: "isCustom",
 	        value: function isCustom(p) {
-	            return !(p.type in tokenTypes);
+	            return !(p.type in parseTypes);
 	        }
 	    }, {
 	        key: "isPropositional",
-	        value: (function (_isPropositional) {
-	            function isPropositional(_x) {
-	                return _isPropositional.apply(this, arguments);
-	            }
-	
-	            isPropositional.toString = function () {
-	                return _isPropositional.toString();
-	            };
-	
-	            return isPropositional;
-	        })(function (p) {
-	            return isCustom(p) || p.type == tokenTypes.AND || p.type == tokenTypes.OR || p.type == tokenTypes.NOT || p.type == tokenTypes.START || p.type == tokenTypes.END || p.type == tokenTypes.LEFT_PAREN && p.children.every(isPropositional);
-	        })
+	        value: function isPropositional(p) {
+	            return this.isCustom(p) || p.type == parseTypes.AND || p.type == parseTypes.OR || p.type == parseTypes.NOT || p.type == parseTypes.START || p.type == parseTypes.END || p.type == parseTypes.GROUP && p.children.every(function (c) {
+	                return this.isPropositional(c);
+	            });
+	        }
 	    }, {
 	        key: "resetStream",
 	        value: function resetStream() {
@@ -365,12 +400,12 @@ var Playspecs =
 	    }, {
 	        key: "charPosition",
 	        value: function charPosition() {
-	            return currentToken() ? currentToken().range.start : this.stream.string.length;
+	            return this.currentToken() ? this.currentToken().range.start : this.stream.string.length;
 	        }
 	    }, {
 	        key: "remainder",
 	        value: function remainder() {
-	            var end = charPosition();
+	            var end = this.charPosition();
 	            return this.stream.string.substr(end);
 	        }
 	    }, {
@@ -388,35 +423,35 @@ var Playspecs =
 	        value: function parse(str) {
 	            this.stream = this.tokenize(str);
 	            this.parseErrors = [];
-	            var tree = parseExpression(0);
-	            var result = { tree: tree, errors: this.parseErrors, remainder: remainder() };
+	            var tree = this.parseExpression(0);
+	            var result = { tree: tree, errors: this.parseErrors, remainder: this.remainder() };
 	            this.parseErrors = [];
-	            resetStream();
+	            this.resetStream();
 	            return result;
 	        }
 	    }, {
 	        key: "parseExpression",
 	        value: function parseExpression(tightness) {
-	            var token = currentToken();
+	            var token = this.currentToken();
 	            var start = token.range.start;
-	            advance();
+	            this.advance();
 	            var tree = token.startParse(this, token);
 	            tree.range.start = start;
-	            tree.range.end = charPosition();
+	            tree.range.end = this.charPosition();
 	            if (tree.type == ERROR) {
 	                return tree;
 	            }
-	            token = currentToken();
+	            token = this.currentToken();
 	            while (token && tightness < token.tightness) {
-	                advance();
+	                this.advance();
 	                var newTree = token.extendParse(this, tree, token);
 	                newTree.range.start = tree.range.start;
-	                newTree.range.end = charPosition();
+	                newTree.range.end = this.charPosition();
 	                if (newTree.type == ERROR) {
 	                    return newTree;
 	                }
 	                tree = newTree;
-	                token = currentToken();
+	                token = this.currentToken();
 	            }
 	            return tree;
 	        }

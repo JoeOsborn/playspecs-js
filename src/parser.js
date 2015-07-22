@@ -16,14 +16,31 @@ export const tokenTypes:{ [key: string]: string } = {
     NOT: "not",
     START: "start",
     END: "end",
+    TRUE: "true",
+    FALSE: "false",
     ERROR: "error"
 };
 
-type
-MatchResult = Array < string >;
+export const parseTypes:{ [key: string]: string } = {
+    OMEGA: tokenTypes.OMEGA,
+    REPETITION: tokenTypes.DOTS_GREEDY,
+    CONCATENATION: tokenTypes.CONCATENATION,
+    GROUP: tokenTypes.LEFT_PAREN,
+    ALTERNATION: tokenTypes.ALTERNATION,
+    INTERSECTION: tokenTypes.INTERSECTION,
+    AND: tokenTypes.AND,
+    OR: tokenTypes.OR,
+    NOT: tokenTypes.NOT,
+    START: tokenTypes.START,
+    END: tokenTypes.END,
+    TRUE: tokenTypes.TRUE,
+    FALSE: tokenTypes.FALSE,
+    ERROR: tokenTypes.ERROR
+};
 
-type
-TokenDefinition = Array < {
+type MatchResult = Array < string >;
+
+type TokenDefinition = Array < {
         type: string,
         match: string | Array < string > | RegExp,
         value? : ((mr:MatchResult) => any),
@@ -32,23 +49,20 @@ TokenDefinition = Array < {
         extendParse? : ((p:Parser, pt:ParseTree, t:Token) => ParseTree)
     } >;
 
-type
-Token = {
+type Token = {
     type: string,
     value: any,
     range: {start: number, end: number}
 };
 
-type
-ParseTree = {
+type ParseTree = {
     type: string,
     value: any,
     children: Array < ParseTree >,
     range: {start: number, end: number}
 };
 
-type
-TokenStream = {
+type TokenStream = {
     string: string,
     tokens: Array < Token >,
     position: number,
@@ -57,6 +71,10 @@ TokenStream = {
 
 export const parseValue = function (parser:Parser, token:Token) {
     return parser.node(token.type, token.value);
+};
+
+export const constantValue = function(c:any) {
+    return function(_mr:MatchResult) { return c; }
 };
 
 export const parseInfixR = function (parser:Parser, left:ParseTree, token:Token) {
@@ -94,7 +112,7 @@ export const standardTokens:Array<TokenSchema> = [
     {
         type: tokenTypes.DOTS_GREEDY,
         match: /^([0-9]*)\s*\.\.\.\s*([0-9]*)/,
-        value: function (matchResult:MatchResult) {
+        value: function (matchResult:MatchResult):any {
             return {
                 greedy: true,
                 lowerBound: matchResult[1] ? parseInt(matchResult[1]) : 0,
@@ -102,10 +120,12 @@ export const standardTokens:Array<TokenSchema> = [
             };
         },
         tightness: 110,
-        startParse: parseValue,
-        extendParse: function (parser:Parser, left:ParseTree, token:Token) {
+        startParse: function(parser:Parser, token:Token):ParseTree {
+            return parser.node(parseTypes.REPETITION, token.value, [parser.node(parseTypes.TRUE, true)]);
+        },
+        extendParse: function (parser:Parser, left:ParseTree, token:Token):ParseTree {
             //TODO: Handle parse errors
-            return parser.node(token.type, token, [left]);
+            return parser.node(parseTypes.REPETITION, token.value, [left]);
         }
     },
     {
@@ -119,26 +139,30 @@ export const standardTokens:Array<TokenSchema> = [
                 upperBound: matchResult[2] ? parseInt(matchResult[2]) : BOUND_INFINITE
             };
         },
-        startParse: parseValue,
-        extendParse: function (parser:Parser, left:ParseTree, token:Token) {
+        startParse: function(parser:Parser, token:Token):ParseTree {
+            return parser.node(parseTypes.REPETITION, token.value, [parser.node(parseTypes.TRUE, true)]);
+        },
+        extendParse: function (parser:Parser, left:ParseTree, token:Token):ParseTree {
             //TODO: Handle parse errors
-            return parser.node(token.type, token, [left]);
+            return parser.node(parseTypes.REPETITION, token.value, [left]);
         }
     },
     {
         type: tokenTypes.DOTS_OMEGA,
         match: [tokenTypes.DOTS_OMEGA],
         tightness: 110,
-        startParse: parseValue,
-        extendParse: function (parser:Parser, left:ParseTree, token:Token) {
+        startParse: function(parser:Parser, token:Token):ParseTree {
+            return parser.node(parseTypes.OMEGA, token.value, [parser.node(parseTypes.TRUE, true)]);
+        },
+        extendParse: function (parser:Parser, left:ParseTree, token:Token):ParseTree {
             //TODO: Handle parse errors
-            return parser.node(token.type, token, [left]);
+            return parser.node(parseTypes.OMEGA, token.value, [left]);
         }
     },
     {
         type: tokenTypes.LEFT_PAREN,
         match: [tokenTypes.LEFT_PAREN],
-        startParse: function (parser:Parser, token:Token) {
+        startParse: function (parser:Parser, token:Token):ParseTree {
             //parse an expression at RBP 0, then eat a )
             const expr = parser.parseExpression(0);
             if(parser.currentToken().type != tokenTypes.RIGHT_PAREN) {
@@ -179,12 +203,12 @@ export const standardTokens:Array<TokenSchema> = [
         type: tokenTypes.NOT,
         match: [tokenTypes.NOT],
         tightness: 220,
-        startParse: function (parser:Parser, token:Token) {
+        startParse: function (parser:Parser, token:Token):ParseTree {
             const phi = parser.parseExpression(token.tightness);
             if (!parser.isPropositional(phi)) {
                 return parser.error("NOT may only negate propositional state formulae", token, phi);
             }
-            return parser.node(token.type, token, [phi]);
+            return parser.node(token.type, token.value, [phi]);
         }
     },
     {
@@ -195,6 +219,18 @@ export const standardTokens:Array<TokenSchema> = [
     {
         type: tokenTypes.END,
         match: [tokenTypes.END],
+        startParse: parseValue
+    },
+    {
+        type: tokenTypes.TRUE,
+        match: [tokenTypes.TRUE],
+        value: constantValue(true),
+        startParse: parseValue
+    },
+    {
+        type: tokenTypes.FALSE,
+        match: [tokenTypes.FALSE],
+        value: constantValue(false),
         startParse: parseValue
     },
     {
@@ -244,7 +280,7 @@ export class Parser {
     }
 
     error(msg:string, token:Token, tree:ParseTree = undefined):ParseTree {
-        const err = node(ERROR, {message: msg, token, tree});
+        const err = this.node(ERROR, {message: msg, token, tree});
         this.parseErrors.push(err);
         return err;
     }
@@ -293,17 +329,20 @@ export class Parser {
     }
 
     isCustom(p:ParseTree):bool {
-        return !(p.type in tokenTypes);
+        return !(p.type in parseTypes);
     }
 
     isPropositional(p:ParseTree):bool {
-        return isCustom(p) ||
-            p.type == tokenTypes.AND ||
-            p.type == tokenTypes.OR ||
-            p.type == tokenTypes.NOT ||
-            p.type == tokenTypes.START ||
-            p.type == tokenTypes.END ||
-            (p.type == tokenTypes.LEFT_PAREN && p.children.every(isPropositional));
+        return this.isCustom(p) ||
+            p.type == parseTypes.AND ||
+            p.type == parseTypes.OR ||
+            p.type == parseTypes.NOT ||
+            p.type == parseTypes.START ||
+            p.type == parseTypes.END ||
+            (p.type == parseTypes.GROUP &&
+             p.children.every(function(c) {
+                 return this.isPropositional(c);
+             }));
     }
 
     resetStream():void {
@@ -311,11 +350,11 @@ export class Parser {
     }
 
     charPosition():number {
-        return currentToken() ? currentToken().range.start : this.stream.string.length;
+        return this.currentToken() ? this.currentToken().range.start : this.stream.string.length;
     }
 
     remainder():string {
-        const end = charPosition();
+        const end = this.charPosition();
         return this.stream.string.substr(end);
     }
 
@@ -330,34 +369,34 @@ export class Parser {
     parse(str:string):{tree:ParseTree, errors:Array<ParseTree>, remainder:string} {
         this.stream = this.tokenize(str);
         this.parseErrors = [];
-        const tree = parseExpression(0);
-        var result = {tree, errors: this.parseErrors, remainder: remainder()};
+        const tree = this.parseExpression(0);
+        var result = {tree, errors: this.parseErrors, remainder: this.remainder()};
         this.parseErrors = [];
-        resetStream();
+        this.resetStream();
         return result;
     }
 
     parseExpression(tightness:number):ParseTree {
-        let token = currentToken();
+        let token = this.currentToken();
         const start = token.range.start;
-        advance();
+        this.advance();
         let tree = token.startParse(this, token);
         tree.range.start = start;
-        tree.range.end = charPosition();
+        tree.range.end = this.charPosition();
         if (tree.type == ERROR) {
             return tree;
         }
-        token = currentToken();
+        token = this.currentToken();
         while (token && tightness < token.tightness) {
-            advance();
+            this.advance();
             let newTree = token.extendParse(this, tree, token);
             newTree.range.start = tree.range.start;
-            newTree.range.end = charPosition();
+            newTree.range.end = this.charPosition();
             if (newTree.type == ERROR) {
                 return newTree;
             }
             tree = newTree;
-            token = currentToken();
+            token = this.currentToken();
         }
         return tree;
     }

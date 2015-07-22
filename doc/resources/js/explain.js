@@ -26,6 +26,8 @@ function prettify(json) {
     return "<pre>"+pretty+"</pre>";
 }
 
+var descCounter=0;
+
 function desc(str, func) {
     var out = "";
     out += str;
@@ -49,6 +51,7 @@ function desc(str, func) {
     exResults = [];
     func();
     out += "<ol>";
+    var errorCount=0;
     for(var i = 0; i < exResults.length; i++) {
         var left = exResults[i].left;
         var right = exResults[i].right;
@@ -56,11 +59,18 @@ function desc(str, func) {
             out += "<li class='good'>ex "+(i+1)+": got "+prettify(left);
         } else {
             out += "<li class='bad'>ex "+(i+1)+": got "+prettify(left)+", expected:"+prettify(right);
+            errorCount++;
         }
     }
     out += "</ol>";
     document.write(out);
+    if(errorCount) {
+        console.log("Desc "+descCounter+" had "+errorCount+" errors");
+    } else {
+        console.log("Desc "+descCounter+" OK");
+    }
     exResults = [];
+    descCounter++;
 }
 
 function ex(v1, v2) {

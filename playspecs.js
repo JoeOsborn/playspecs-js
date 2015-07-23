@@ -47,22 +47,18 @@ var Playspecs =
 
 	"use strict";
 	
-	Object.defineProperty(exports, "__esModule", {
-	    value: true
-	});
-	exports.hi = hi;
-	
 	function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj["default"] = obj; return newObj; } }
 	
 	var _parser = __webpack_require__(1);
 	
 	var Parser = _interopRequireWildcard(_parser);
 	
-	function hi() {
-	    console.log("hello there");
-	}
+	var _compiler = __webpack_require__(2);
+	
+	var Compiler = _interopRequireWildcard(_compiler);
 	
 	exports.Parser = Parser;
+	exports.Compiler = Compiler;
 	
 	//const Parser = require("parser.js").Parser;
 	//
@@ -83,6 +79,9 @@ var Playspecs =
 	});
 	
 	var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
+	
+	exports.isCustom = isCustom;
+	exports.isPropositional = isPropositional;
 	
 	function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 	
@@ -109,7 +108,7 @@ var Playspecs =
 	
 	exports.tokenTypes = tokenTypes;
 	var parseTypes = {
-	    OMEGA: tokenTypes.OMEGA,
+	    OMEGA: tokenTypes.DOTS_OMEGA,
 	    REPETITION: tokenTypes.DOTS_GREEDY,
 	    CONCATENATION: tokenTypes.CONCATENATION,
 	    GROUP: tokenTypes.LEFT_PAREN,
@@ -146,12 +145,12 @@ var Playspecs =
 	
 	exports.parseInfixR = parseInfixR;
 	var parseInfixRPropositional = function parseInfixRPropositional(parser, left, token) {
-	    if (!parser.isPropositional(left)) {
+	    if (!isPropositional(left)) {
 	        return parser.error("Left hand side of token must be propositional", token, left);
 	    }
 	    var children = [left];
 	    var right = parser.parseExpression(token.tightness - 1);
-	    if (!parser.isPropositional(right)) {
+	    if (!isPropositional(right)) {
 	        return parser.error("Right hand side of token must be propositional", token, right);
 	    }
 	    children.push(right);
@@ -161,6 +160,7 @@ var Playspecs =
 	exports.parseInfixRPropositional = parseInfixRPropositional;
 	var BOUND_INFINITE = "$END";
 	
+	exports.BOUND_INFINITE = BOUND_INFINITE;
 	var standardTokens = [{
 	    type: tokenTypes.WHITESPACE,
 	    match: /^\s+/
@@ -181,10 +181,12 @@ var Playspecs =
 	    },
 	    tightness: 110,
 	    startParse: function startParse(parser, token) {
-	        return parser.node(parseTypes.REPETITION, token.value, [parser.node(parseTypes.TRUE, true)]);
+	        var truePhi = parser.node(parseTypes.TRUE, true);
+	        truePhi.range.start = token.range.start;
+	        truePhi.range.end = token.range.start;
+	        return parser.node(parseTypes.REPETITION, token.value, [truePhi]);
 	    },
 	    extendParse: function extendParse(parser, left, token) {
-	        //TODO: Handle parse errors
 	        return parser.node(parseTypes.REPETITION, token.value, [left]);
 	    }
 	}, {
@@ -199,10 +201,12 @@ var Playspecs =
 	        };
 	    },
 	    startParse: function startParse(parser, token) {
-	        return parser.node(parseTypes.REPETITION, token.value, [parser.node(parseTypes.TRUE, true)]);
+	        var truePhi = parser.node(parseTypes.TRUE, true);
+	        truePhi.range.start = token.range.start;
+	        truePhi.range.end = token.range.start;
+	        return parser.node(parseTypes.REPETITION, token.value, [truePhi]);
 	    },
 	    extendParse: function extendParse(parser, left, token) {
-	        //TODO: Handle parse errors
 	        return parser.node(parseTypes.REPETITION, token.value, [left]);
 	    }
 	}, {
@@ -210,10 +214,12 @@ var Playspecs =
 	    match: [tokenTypes.DOTS_OMEGA],
 	    tightness: 110,
 	    startParse: function startParse(parser, token) {
-	        return parser.node(parseTypes.OMEGA, token.value, [parser.node(parseTypes.TRUE, true)]);
+	        var truePhi = parser.node(parseTypes.TRUE, true);
+	        truePhi.range.start = token.range.start;
+	        truePhi.range.end = token.range.end;
+	        return parser.node(parseTypes.OMEGA, token.value, [truePhi]);
 	    },
 	    extendParse: function extendParse(parser, left, token) {
-	        //TODO: Handle parse errors
 	        return parser.node(parseTypes.OMEGA, token.value, [left]);
 	    }
 	}, {
@@ -225,7 +231,7 @@ var Playspecs =
 	        if (parser.currentToken().type != tokenTypes.RIGHT_PAREN) {
 	            return parser.error("Missing right parenthesis", token, expr);
 	        }
-	        return parser.node(token.type, token.value, [expr]);
+	        return parser.node(parseTypes.GROUP, token.value, [expr]);
 	    }
 	}, {
 	    type: tokenTypes.RIGHT_PAREN,
@@ -256,7 +262,7 @@ var Playspecs =
 	    tightness: 220,
 	    startParse: function startParse(parser, token) {
 	        var phi = parser.parseExpression(token.tightness);
-	        if (!parser.isPropositional(phi)) {
+	        if (!isPropositional(phi)) {
 	            return parser.error("NOT may only negate propositional state formulae", token, phi);
 	        }
 	        return parser.node(token.type, token.value, [phi]);
@@ -292,6 +298,21 @@ var Playspecs =
 	
 	function isString(s) {
 	    return typeof s === "string" || s instanceof String;
+	}
+	
+	function isCustom(p) {
+	    for (var k in parseTypes) {
+	        if (parseTypes[k] == p.type) {
+	            return false;
+	        }
+	    }
+	    return true;
+	}
+	
+	function isPropositional(p) {
+	    return isCustom(p) || p.type == parseTypes.AND || p.type == parseTypes.OR || p.type == parseTypes.NOT || p.type == parseTypes.START || p.type == parseTypes.END || p.type == parseTypes.GROUP && p.children.every(function (c) {
+	        return isPropositional(c);
+	    });
 	}
 	
 	var Parser = (function () {
@@ -389,18 +410,6 @@ var Playspecs =
 	            return { string: str, tokens: result, position: 0, errors: errors };
 	        }
 	    }, {
-	        key: "isCustom",
-	        value: function isCustom(p) {
-	            return !(p.type in parseTypes);
-	        }
-	    }, {
-	        key: "isPropositional",
-	        value: function isPropositional(p) {
-	            return this.isCustom(p) || p.type == parseTypes.AND || p.type == parseTypes.OR || p.type == parseTypes.NOT || p.type == parseTypes.START || p.type == parseTypes.END || p.type == parseTypes.GROUP && p.children.every(function (c) {
-	                return this.isPropositional(c);
-	            });
-	        }
-	    }, {
 	        key: "resetStream",
 	        value: function resetStream() {
 	            this.stream = { string: "", tokens: [], position: 0, errors: [] };
@@ -443,10 +452,8 @@ var Playspecs =
 	            var token = this.currentToken();
 	            var tokenDef = this.tokensByType[token.type];
 	            var start = token.range.start;
-	            console.log("parse token " + token.type);
 	            this.advance();
 	            var tree = tokenDef.startParse(this, token);
-	            console.log("Parsed unit " + tree.type);
 	            tree.range.start = start;
 	            tree.range.end = this.charPosition();
 	            if (tree.type == ERROR) {
@@ -456,9 +463,7 @@ var Playspecs =
 	            while (token && tightness < token.tightness) {
 	                tokenDef = this.tokensByType[token.type];
 	                this.advance();
-	                console.log("Extend " + tree.type + " using " + token.type);
 	                var newTree = tokenDef.extendParse(this, tree, token);
-	                console.log("Got " + newTree.type);
 	                newTree.range.start = tree.range.start;
 	                newTree.range.end = this.charPosition();
 	                if (newTree.type == ERROR) {
@@ -477,6 +482,162 @@ var Playspecs =
 	exports.Parser = Parser;
 	
 	// A bit redundant, but makes defining generic startParse/extendParse functions easier.
+
+/***/ },
+/* 2 */
+/***/ function(module, exports, __webpack_require__) {
+
+	"use strict";
+	
+	Object.defineProperty(exports, "__esModule", {
+	    value: true
+	});
+	
+	var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
+	
+	function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) arr2[i] = arr[i]; return arr2; } else { return Array.from(arr); } }
+	
+	function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+	
+	var _parser = __webpack_require__(1);
+	
+	var Compiler = (function () {
+	    function Compiler(_ctx) {
+	        _classCallCheck(this, Compiler);
+	    }
+	
+	    _createClass(Compiler, [{
+	        key: "compileTree",
+	        value: function compileTree(tree, idx) {
+	            if (tree.type == _parser.parseTypes.GROUP) {
+	                // TODO: submatch saving
+	                return this.compileTree(tree.children[0], idx);
+	            }
+	            if ((0, _parser.isPropositional)(tree)) {
+	                console.log("tree " + JSON.stringify(tree) + ":" + tree.type + " is propositional");
+	                return [{ type: "check", formula: tree, index: idx }];
+	            }
+	            if (tree.type == _parser.parseTypes.CONCATENATION) {
+	                var aIdx = idx;
+	                var a = this.compileTree(tree.children[0], aIdx);
+	                var bIdx = idx + a.length;
+	                var b = this.compileTree(tree.children[1], bIdx);
+	                return a.concat(b);
+	            }
+	            if (tree.type == _parser.parseTypes.ALTERNATION) {
+	                // branch; but need to compile left first.
+	                // left:
+	                var aIdx = idx + 1;
+	                var _left = this.compileTree(tree.children[0], aIdx);
+	                var bIdx = aIdx + _left.length + 1; // Leave room for jump after left
+	                // now we can define branch, which goes before left:
+	                var branch = [{ type: "split", left: aIdx, right: bIdx, index: idx }];
+	                // right:
+	                var _right = this.compileTree(tree.children[1], bIdx);
+	                var cIdx = bIdx + _right.length;
+	                var jump = [{ type: "jump", target: cIdx, index: aIdx + _left.length }];
+	                return branch.concat(_left).concat(jump).concat(_right);
+	            }
+	            if (tree.type == _parser.parseTypes.INTERSECTION) {}
+	            if (tree.type == _parser.parseTypes.REPETITION) {
+	                var greedy = tree.value.greedy;
+	                var min = tree.value.lowerBound;
+	                var phi = tree.children[0];
+	                // min repetitions of phi
+	                var preface = [];
+	                for (var i = 0; i < min; i++) {
+	                    var phiPgm = this.compileTree(phi, idx);
+	                    idx += phiPgm.length;
+	                    preface.push.apply(preface, _toConsumableArray(phiPgm));
+	                }
+	                if (tree.value.upperBound != _parser.BOUND_INFINITE) {
+	                    // M-N repetitions of (phi?)
+	                    var max = tree.value.upperBound;
+	                    var optionals = [];
+	                    var targets = [];
+	                    for (var i = min; i < max; i++) {
+	                        // make room for split li,lZ
+	                        idx = idx + 1;
+	                        // store jump target li in targets
+	                        targets.push(idx);
+	                        var phiPgm = this.compileTree(phi, idx);
+	                        // make room for phiPgm
+	                        idx += phiPgm.length;
+	                        optionals.push(phiPgm);
+	                    }
+	                    //idx is now just past the end of all the "optionals".
+	                    var repetition = [];
+	                    for (var i = 0; i < optionals.length; i++) {
+	                        repetition.push({
+	                            type: "split",
+	                            left: greedy ? targets[i] : idx,
+	                            right: greedy ? idx : targets[i],
+	                            index: targets[i] - 1
+	                        });
+	                        repetition.push.apply(repetition, _toConsumableArray(optionals[i]));
+	                    }
+	                    return preface.concat(repetition);
+	                } else {
+	                    // A: split B, C; but must compile B first to get label for C
+	                    var aIdx = idx;
+	                    // make room for the split
+	                    var bIdx = aIdx + 1;
+	                    // then put in B
+	                    var b = this.compileTree(phi, bIdx);
+	                    var jump = [{ type: "jump", target: aIdx, index: bIdx + b.length }];
+	                    // then label C
+	                    var cIdx = bIdx + b.length + 1;
+	                    var branch = [{
+	                        type: "split",
+	                        left: greedy ? bIdx + 1 : cIdx,
+	                        right: greedy ? cIdx : bIdx + 1,
+	                        index: idx
+	                    }];
+	                    return preface.concat(branch).concat(b).concat(jump);
+	                }
+	            }
+	            throw new Error("Can't compile " + JSON.stringify(tree));
+	            return [];
+	        }
+	    }, {
+	        key: "compile",
+	        value: function compile(tree) {
+	            // We preface every program with "true .." so that all Playspecs are effectively start-anchored.
+	            // This is as per https://swtch.com/~rsc/regexp/regexp2.html
+	            var preface = [{ type: "split", left: 2, right: 1, index: 0 }, {
+	                type: "check",
+	                formula: {
+	                    type: _parser.parseTypes.TRUE,
+	                    value: true,
+	                    children: [],
+	                    range: { start: 0, end: 0 }
+	                },
+	                index: 1
+	            }, { type: "jump", target: 0, index: 2 }];
+	            var body = this.compileTree(tree, preface.length);
+	            var result = preface.concat(body).concat([{ type: "match", index: preface.length + body.length }]);
+	            if (!this.validate(result)) {
+	                throw new Error("Error compiling tree " + JSON.stringify(tree) + " into result " + JSON.stringify(result));
+	            }
+	            return result;
+	        }
+	    }, {
+	        key: "validate",
+	        value: function validate(pgm) {
+	            // todo: validate programs against some basic sanity checks.
+	            //ensure each instruction's index is its index in pgm
+	            //ensure no split or jump goes beyond end of program
+	            //...
+	            return true;
+	        }
+	    }]);
+	
+	    return Compiler;
+	})();
+	
+	exports.Compiler = Compiler;
+	
+	// TODO: intersection
 
 /***/ }
 /******/ ]);

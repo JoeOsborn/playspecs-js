@@ -7,3 +7,16 @@ pre {outline: 1px solid #ccc; padding: 5px; margin: 5px; }
 .good { background-color: lightgreen; }
 .bad { background-color: lightcoral; }
 code { background-color: lightgray; }
+code.bytecode { font-style: italic; }
+
+table tr { vertical-align: top; }
+table td { border: 1px solid black; }
+
+ol.examples .good div {
+    background-color: lightgreen;
+}
+ol.examples .bad div {
+    background-color: lightcoral;
+    display: inline;
+    float: left;
+}

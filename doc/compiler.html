@@ -1,0 +1,313 @@
+<html>
+<head>
+    <link rel="stylesheet" href="resources/css/explain.css"/>
+    <script src="resources/js/explain.js"></script>
+    <script src="../playspecs.js"></script>
+</head>
+<body>
+<h1>Compilation</h1>
+
+<p>Compilation and interpretation of Playspecs follows the general pattern of the Thompson/Pike VM, quite clearly
+    described by <a href="https://swtch.com/~rsc/regexp/regexp2.html">Russ Cox</a>. Briefly, the parse tree is compiled
+    into virtual machine instructions. In this document, we will start by addressing the basics, then show how custom
+    predicates are incorporated, and finally proceed to the compilation strategy for more advanced syntax like
+    intersection and subgroup matching which require new instructions.</p>
+
+<table>
+    <tr>
+        <td>Formula</td>
+        <td>VM Instructions</td>
+    </tr>
+    <tr>
+        <td>Propositional formula <code>F</code></td>
+        <td><code class="bytecode">check F</code></td>
+    </tr>
+    <tr>
+        <td><code>A,B</code></td>
+        <td>instructions for <code>A</code><br/>
+            instructions for <code>B</code></td>
+    </tr>
+    <tr>
+        <td><code>A;B</code></td>
+        <td><code class="bytecode">split lA, lB</code><br/>
+            <code class="bytecode">lA</code>: instructions for <code>A</code><br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+            <code class="bytecode">jump lC</code><br/>
+            <code class="bytecode">lB</code>: instructions for <code>B</code><br/>
+            <code class="bytecode">lC</code>: (next)
+        </td>
+    </tr>
+    <tr>
+        <td><code>A M...N</code></td>
+        <td>
+            <code>M</code> repetitions of instructions for <code>A</code><br/>
+            For each <code>i</code> from 1 to <code>M-N</code>, repeat:<br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+            <code class="bytecode">split li,lZ</code><br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+            <code class="bytecode">li</code>: instructions for <code>A</code><br/>
+            <code class="bytecode">lZ</code>: (next)
+        </td>
+    </tr>
+    <tr>
+        <td><code>A M...</code></td>
+        <td>
+            <code>M</code> repetitions of instructions for <code>A</code><br/>
+            <code class="bytecode">lA</code>: <code class="bytecode">split lB, lC</code><br/>
+            <code class="bytecode">lB</code>: instructions for <code>A</code><br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+            <code class="bytecode">jump lA</code><br/>
+            <code class="bytecode">lC</code>: (next)
+        </td>
+    </tr>
+    <tr>
+        <td><code>A M..N</code></td>
+        <td>
+            As per <code>A M...N</code>, but instead <code class="bytecode">split lZ, li</code>
+        </td>
+    </tr>
+    <tr>
+        <td><code>A M..</code></td>
+        <td>
+            As per <code>A M...</code>, but instead <code class="bytecode">split lC, lB</code>
+        </td>
+    </tr>
+    <tr>
+        <td>(end of Playspec)</td>
+        <td><code class="bytecode">match</code></td>
+    </tr>
+</table>
+
+<script>
+    var promWeek = {
+        tokens: [
+            {
+                type: "PERSON",
+                match: ["Chloe", "Simon", "Phoebe", "Doug"/*, ... */],
+                startParse: Playspecs.Parser.parseValue
+            },
+            {
+                type: "RELATIONSHIP",
+                match: ["dating", "friends", "enemies", "embarrassed"/*, ... */],
+                startParse: Playspecs.Parser.parseValue
+            },
+            {
+                type: "LINK",
+                match: "-",
+                // Custom tokens have their own precedence scale and always bind tighter than built-in ones.
+                tightness: 1,
+                extendParse: function (parser, parseTree, token) {
+                    var left = parseTree;
+                    if (left.type != "PERSON") {
+                        return parser.error("Left hand side of LINK must be PERSON", token, parseTree);
+                    }
+                    // Links are not associative, so we must parse at a higher tightness.
+                    // In other words, this call to parseExpression will never try to extend the given parse
+                    // using a LINK or any lower-precedence term.
+                    var relationship = parser.parseExpression(token.tightness);
+                    // A real implementation would handle inequalities over network values too.
+                    if (relationship.type != "RELATIONSHIP") {
+                        return parser.error("Middle term of LINK must be RELATIONSHIP", token, relationship);
+                    }
+                    // We need to examine the next token without running parseExpression again to know if the
+                    // LINK syntax is being used correctly.
+                    var current = parser.currentToken();
+                    if (current.type != "LINK") {
+                        return parser.error(
+                                "A second LINK token must appear after the middle term of a LINK",
+                                current
+                        );
+                    }
+                    parser.advance();
+                    var right = parser.parseExpression(token.tightness + 1);
+                    if (right.type != "PERSON") {
+                        return parser.error("Right hand side of LINK must be PERSON", token, right);
+                    }
+                    // We'll keep all three parse trees around to maintain location information, etc.
+                    return parser.node("LINK_RELATIONSHIP", undefined, [left, relationship, right]);
+                }
+            }
+            // Also: networks, inequalities, numbers
+        ]
+    };
+    desc("<p>First, we should compile a simple Playspec. While in practice the <code>Playspecs</code> module is " +
+            "the most convenient way to construct Playspecs, here we want to illustrate <code>Compiler</code>'s " +
+            "behavior so we use it directly. Its input is a <code>ParseTree</code> from the <code>Parser</code> " +
+            "module. The game-specific context configuration object is passed to both; here, we use the Prom Week " +
+            "example from the <a href='parser.html'><code>Parser</code> documentation</a>. Note that the output " +
+            "program has some additional front matter; every Playspec is implicitly anchored to <code>start</code>," +
+            "so that one linear check over the string always suffices to find all matches (as per " +
+            "<a href='https://swtch.com/~rsc/regexp/regexp2.html'>Russ Cox's note on unanchored expressions</a>)." +
+            "</p>", function () {
+        var parser = new Playspecs.Parser.Parser(promWeek);
+        var compiler = new Playspecs.Compiler.Compiler(promWeek);
+        var parseTree = parser.parse("start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end").tree;
+        var program = compiler.compile(parseTree);
+        ex(program, [
+            {
+                "type": "ssplit",
+                "left": 2,
+                "right": 1,
+                "index": 0
+            },
+            {
+                "type": "check",
+                "formula": {
+                    "type": "true",
+                    "value": true,
+                    "children": [],
+                    "range": {
+                        "start": 0,
+                        "end": 0
+                    }
+                },
+                "index": 1
+            },
+            {
+                "type": "jump",
+                "target": 0,
+                "index": 2
+            },
+            {
+                "type": "check",
+                "formula": {
+                    "type": "start",
+                    "value": "start",
+                    "children": [],
+                    "range": {
+                        "start": 0,
+                        "end": 5
+                    }
+                },
+                "index": 3
+            },
+            {
+                "type": "split",
+                "left": 6,
+                "right": 7,
+                "index": 4
+            },
+            {
+                "type": "check",
+                "formula": {
+                    "type": "not",
+                    "value": "not",
+                    "children": [
+                        {
+                            "type": "LINK_RELATIONSHIP",
+                            "children": [
+                                {
+                                    "type": "PERSON",
+                                    "value": "Chloe",
+                                    "children": [],
+                                    "range": {
+                                        "start": 11,
+                                        "end": 16
+                                    }
+                                },
+                                {
+                                    "type": "RELATIONSHIP",
+                                    "value": "dating",
+                                    "children": [],
+                                    "range": {
+                                        "start": 17,
+                                        "end": 23
+                                    }
+                                },
+                                {
+                                    "type": "PERSON",
+                                    "value": "Doug",
+                                    "children": [],
+                                    "range": {
+                                        "start": 24,
+                                        "end": 29
+                                    }
+                                }
+                            ],
+                            "range": {
+                                "start": 11,
+                                "end": 29
+                            }
+                        }
+                    ],
+                    "range": {
+                        "start": 7,
+                        "end": 29
+                    }
+                },
+                "index": 5
+            },
+            {
+                "type": "jump",
+                "target": 4,
+                "index": 6
+            },
+            {
+                "type": "check",
+                "formula": {
+                    "type": "&",
+                    "value": "&",
+                    "children": [
+                        {
+                            "type": "LINK_RELATIONSHIP",
+                            "children": [
+                                {
+                                    "type": "PERSON",
+                                    "value": "Doug",
+                                    "children": [],
+                                    "range": {
+                                        "start": 34,
+                                        "end": 38
+                                    }
+                                },
+                                {
+                                    "type": "RELATIONSHIP",
+                                    "value": "embarrassed",
+                                    "children": [],
+                                    "range": {
+                                        "start": 39,
+                                        "end": 50
+                                    }
+                                },
+                                {
+                                    "type": "PERSON",
+                                    "value": "Chloe",
+                                    "children": [],
+                                    "range": {
+                                        "start": 51,
+                                        "end": 57
+                                    }
+                                }
+                            ],
+                            "range": {
+                                "start": 34,
+                                "end": 57
+                            }
+                        },
+                        {
+                            "type": "end",
+                            "value": "end",
+                            "children": [],
+                            "range": {
+                                "start": 59,
+                                "end": 62
+                            }
+                        }
+                    ],
+                    "range": {
+                        "start": 34,
+                        "end": 62
+                    }
+                },
+                "index": 7
+            },
+            {
+                "type": "match",
+                "index": 8
+            }
+        ]);
+    });
+</script>
+
+</body>
+</html>

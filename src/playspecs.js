@@ -9,9 +9,7 @@
 //export Parser;
 
 import * as Parser from "./parser";
-
-export function hi() {
-    console.log("hello there");
-}
+import * as Compiler from "./compiler";
 
 exports.Parser = Parser;
+exports.Compiler = Compiler;

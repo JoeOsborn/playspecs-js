@@ -808,12 +808,17 @@
     };
     desc("<p>Parse errors are placed directly into the tree and also appear in a separate list. In this case, the " +
             "<code>LINK_RELATIONSHIP</code> tree can't be extended by another <code>LINK</code>. The parse " +
-            "terminates right away, leaving the remainder of the string alone.</p>", function() {
+            "terminates right away, leaving the remainder of the string alone.</p>", function () {
         var parser = new Playspecs.Parser.Parser(promWeekContext);
         var parseResult = parser.parse("Chloe-dating-Doug-embarrassed-Simon");
         ex(parseResult, expectedParseResult);
     });
 </script>
+<p>One common source of parse errors is that the logical connectives <code>and</code>, <code>or</code>, and
+    <code>not</code> may only be combined with other propositional terms: i.e., other logical connectives, custom
+    game-specific terms, <code>true</code>, <code>false</code>, <code>start</code>, <code>end</code>, and parenthesized
+    groups which only contain a propositional term. Such errors are detected at parse time, although some others
+    cannot be detected until <a href="compiler.html">compile time</a>.</p>
 
 </body>
 </html>

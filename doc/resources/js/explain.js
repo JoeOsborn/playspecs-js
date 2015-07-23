@@ -23,56 +23,68 @@ function syntaxHighlight(json) {
 
 function prettify(json) {
     var pretty = syntaxHighlight(json);
-    return "<pre>"+pretty+"</pre>";
+    return "<pre>" + pretty + "</pre>";
 }
 
-var descCounter=0;
+var descCounter = 0;
 
 function desc(str, func) {
     var out = "";
     out += str;
     var funcBody = func.toString();
-    funcBody = funcBody.substr(funcBody.indexOf("{")+1);
-    funcBody = funcBody.substr(0,funcBody.lastIndexOf("\n"));
-    funcBody = funcBody.split("\n").map(function(s) {
+    funcBody = funcBody.substr(funcBody.indexOf("{") + 1);
+    funcBody = funcBody.substr(0, funcBody.lastIndexOf("\n"));
+    funcBody = funcBody.split("\n").map(function (s) {
         return s.substr(4);
     }).join("\n");
     funcBody = syntaxHighlight(funcBody);
     var exCount = 0;
-    funcBody = funcBody.split("\n").map(function(s) {
-        if(s.match(/^\s*ex\(/)) {
+    funcBody = funcBody.split("\n").map(function (s) {
+        if (s.match(/^\s*ex\(/)) {
             exCount++;
-            return "<span class='ex-index'>"+exCount+".</span>"+s;
+            return "<span class='ex-index'>" + exCount + ".</span>" + s;
         } else {
             return s;
         }
     }).join("\n");
-    out += "<pre>"+funcBody+"</pre>";
+    out += "<pre>" + funcBody + "</pre>";
     exResults = [];
     func();
-    out += "<ol>";
-    var errorCount=0;
-    for(var i = 0; i < exResults.length; i++) {
+    out += "<ol class='examples'>";
+    var errorCount = 0;
+    for (var i = 0; i < exResults.length; i++) {
         var left = exResults[i].left;
         var right = exResults[i].right;
-        if(left == right || right === undefined) {
-            out += "<li class='good'>ex "+(i+1)+": got "+prettify(left);
+        if (left == right || right === undefined) {
+            out += "<li class='good'>" +
+                "<details>" +
+                "<summary>ex " + (i + 1) + " as expected.</summary>" +
+                prettify(left) +
+                "</details>";
         } else {
-            out += "<li class='bad'>ex "+(i+1)+": got "+prettify(left)+", expected:"+prettify(right);
+            out += "<li class='bad'>" +
+                "<details open='true'>" +
+                "<summary>ex " + (i + 1) + " not as expected.</summary>" +
+                "<div>got: " + prettify(left) + "</div>" +
+                "<div>expected:" + prettify(right) + "</div>" +
+                "</details>";
             errorCount++;
         }
     }
     out += "</ol>";
     document.write(out);
-    if(errorCount) {
-        console.log("Desc "+descCounter+" had "+errorCount+" errors");
+    if (errorCount) {
+        console.log("Desc " + descCounter + " had " + errorCount + " errors");
     } else {
-        console.log("Desc "+descCounter+" OK");
+        console.log("Desc " + descCounter + " OK");
     }
     exResults = [];
     descCounter++;
 }
 
 function ex(v1, v2) {
-    exResults.push({left:JSON.stringify(v1,null,2), right:(v2 === undefined ? undefined : JSON.stringify(v2,null,2))});
+    exResults.push({
+        left: JSON.stringify(v1, null, 2),
+        right: (v2 === undefined ? undefined : JSON.stringify(v2, null, 2))
+    });
 }

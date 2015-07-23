@@ -130,6 +130,16 @@
             // Also: networks, inequalities, numbers
         ]
     };
+    var expectedStringProgram =
+            "0:split 2 1\n" +
+            "1:check true\n" +
+            "2:jump 0\n" +
+            "3:check start\n" +
+            "4:split 5 7\n" +
+            "5:check not LINK_RELATIONSHIP(,PERSON(Chloe,),RELATIONSHIP(dating,),PERSON(Doug,))\n" +
+            "6:jump 4\n" +
+            "7:check LINK_RELATIONSHIP(,PERSON(Doug,),RELATIONSHIP(embarrassed,),PERSON(Chloe,)) & end\n" +
+            "8:match";
     desc("<p>First, we should compile a simple Playspec. While in practice the <code>Playspecs</code> module is " +
             "the most convenient way to construct Playspecs, here we want to illustrate <code>Compiler</code>'s " +
             "behavior so we use it directly. Its input is a <code>ParseTree</code> from the <code>Parser</code> " +
@@ -145,7 +155,7 @@
         var program = compiler.compile(parseTree);
         ex(program, [
             {
-                "type": "ssplit",
+                "type": "split",
                 "left": 2,
                 "right": 1,
                 "index": 0
@@ -183,7 +193,7 @@
             },
             {
                 "type": "split",
-                "left": 6,
+                "left": 5,
                 "right": 7,
                 "index": 4
             },
@@ -306,8 +316,47 @@
                 "index": 8
             }
         ]);
+        // We can also ask the compiler to stringify the VM code for easier reading.
+        var stringProgram = compiler.stringify(program);
+        ex(stringProgram, expectedStringProgram);
+    });
+    var parser = new Playspecs.Parser.Parser(promWeek);
+    var compiler = new Playspecs.Compiler.Compiler(promWeek);
+    expectedStringProgram = "0:split 2 1  \t\t(root)\n" +
+            "1:check true  \t\t(root)\n" +
+            "2:jump 0  \t\t(root)\n" +
+            "3:check true\t(ch. 0-0)\n" +
+            "4:check true\t(ch. 0-0)\n" +
+            "5:check true\t(ch. 0-0)\n" +
+            "6:split 7 10\t\t(... {\"greedy\":true,\"lowerBound\":3,\"upperBound\":5})\n" +
+            "7:check true\t(ch. 0-0)\n" +
+            "8:split 9 10\t\t(... {\"greedy\":true,\"lowerBound\":3,\"upperBound\":5})\n" +
+            "9:check true\t(ch. 0-0)\n" +
+            "10:split 11 21\t\t(... {\"greedy\":true,\"lowerBound\":0,\"upperBound\":\"$END\"})\n" +
+            "11:split 12 17\t\t(; \";\")\n" +
+            "12:split 16 13\t\t(... {\"greedy\":false,\"lowerBound\":0,\"upperBound\":2})\n" +
+            "13:check false\t(ch. 8-14)\n" +
+            "14:split 16 15\t\t(... {\"greedy\":false,\"lowerBound\":0,\"upperBound\":2})\n" +
+            "15:check false\t(ch. 8-14)\n" +
+            "16:jump 20\t\t(; \";\")\n" +
+            "17:check true\t(ch. 20-24)\n" +
+            "18:check false\t(ch. 26-31)\n" +
+            "19:check true\t(ch. 33-37)\n" +
+            "20:jump 10\t\t(... {\"greedy\":true,\"lowerBound\":0,\"upperBound\":\"$END\"})\n" +
+            "21:match  \t\t(root)";
+    desc("<p>The gadgets all work as defined in the table above. For complicated programs, it may help understanding " +
+            "to pass the <code>debug=true</code> flag to <code>compile()</code>, which maintains per-instruction " +
+            "source information. <code>stringify</code> will annotate lines with such information. Control flow " +
+            "instructions will be labeled with the control statement they belong to, while boolean checks will " +
+            "be labeled with the character range where the condition appears in the original spec.</p>", function () {
+        var parseTree = parser.parse("3...5, (false ..2 ; true, false, true) ...").tree;
+        var program = compiler.compile(parseTree, true);
+        var stringProgram = compiler.stringify(program);
+        ex(stringProgram, expectedStringProgram);
     });
 </script>
-
+<p>Adding new features to this Playspecs implementation mainly involves devising new parse tokens and gadgets, sometimes
+    requiring new VM instructions and occasionally new bits of thread state. We leave off a discussion of threads and
+    their state for the <a href="interpreter.html"><code>Interpreter</code>'s documentation</a>.</p>
 </body>
 </html>

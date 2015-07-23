@@ -42,7 +42,7 @@ function desc(str, func) {
     funcBody = funcBody.split("\n").map(function (s) {
         if (s.match(/^\s*ex\(/)) {
             exCount++;
-            return "<span class='ex-index'>" + exCount + ".</span>" + s;
+            return "<span class='ex-index'>" + exCount + ".</span>" + s.substr(2);
         } else {
             return s;
         }
@@ -53,20 +53,21 @@ function desc(str, func) {
     out += "<ol class='examples'>";
     var errorCount = 0;
     for (var i = 0; i < exResults.length; i++) {
+        var isJSON = exResults[i].isJSON;
         var left = exResults[i].left;
         var right = exResults[i].right;
         if (left == right || right === undefined) {
             out += "<li class='good'>" +
                 "<details>" +
                 "<summary>ex " + (i + 1) + " as expected.</summary>" +
-                prettify(left) +
+                (isJSON ? prettify(left) : left) +
                 "</details>";
         } else {
             out += "<li class='bad'>" +
                 "<details open='true'>" +
                 "<summary>ex " + (i + 1) + " not as expected.</summary>" +
-                "<div>got: " + prettify(left) + "</div>" +
-                "<div>expected:" + prettify(right) + "</div>" +
+                (isJSON ? prettify(left) : left) +
+                (isJSON ? prettify(right) : right) +
                 "</details>";
             errorCount++;
         }
@@ -82,9 +83,24 @@ function desc(str, func) {
     descCounter++;
 }
 
+function isString(s) {
+    return typeof s === 'string' || s instanceof String;
+}
+
 function ex(v1, v2) {
-    exResults.push({
-        left: JSON.stringify(v1, null, 2),
-        right: (v2 === undefined ? undefined : JSON.stringify(v2, null, 2))
-    });
+    var result;
+    if (isString(v1) && (v2 === undefined || isString(v2))) {
+        result = {
+            left: "<pre>" + v1 + "</pre>",
+            right: (v2 === undefined ? undefined : "<pre>" + v2 + "</pre>"),
+            isJSON: false
+        };
+    } else {
+        result = {
+            left: JSON.stringify(v1, null, 2),
+            right: (v2 === undefined ? undefined : JSON.stringify(v2, null, 2)),
+            isJSON: true
+        };
+    }
+    exResults.push(result);
 }

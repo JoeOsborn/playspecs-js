@@ -1,22 +1,67 @@
-pre {outline: 1px solid #ccc; padding: 5px; margin: 5px; }
-.string { color: green; }
-.number { color: blue; }
-.boolean { color: blue; }
-.null { color: magenta; }
-.key { color: black; }
-.good { background-color: lightgreen; }
-.bad { background-color: lightcoral; }
-code { background-color: lightgray; }
-code.bytecode { font-style: italic; }
+pre {
+    outline: 1px solid #ccc;
+    padding: 5px;
+    margin: 5px;
+}
 
-table tr { vertical-align: top; }
-table td { border: 1px solid black; }
+.string {
+    color: green;
+}
 
-ol.examples .good div {
+.number {
+    color: blue;
+}
+
+.boolean {
+    color: blue;
+}
+
+.null {
+    color: magenta;
+}
+
+.key {
+    color: black;
+}
+
+.good {
     background-color: lightgreen;
 }
-ol.examples .bad div {
+
+.bad {
     background-color: lightcoral;
+}
+
+code {
+    background-color: lightgray;
+}
+
+code.bytecode {
+    font-style: italic;
+}
+
+table tr {
+    vertical-align: top;
+}
+
+table td {
+    border: 1px solid black;
+}
+
+ol.examples > li {
     display: inline;
-    float: left;
+}
+
+ol.examples > li.good details {
+    background-color: lightgreen;
+}
+
+ol.examples > li.bad details {
+    background-color: lightcoral;
+}
+
+ol.examples .bad pre {
+    display: inline-block;
+    vertical-align: top;
+    width: 48%;
 }

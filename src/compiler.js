@@ -4,10 +4,10 @@ import {parseTypes, isPropositional, BOUND_INFINITE} from "./parser";
 
 type
 Instruction =
-    {type: "check", formula: ParseTree, index: number} |
-    {type: "jump", target: number, index: number} |
-    {type: "split", left: number, right: number, index: number} |
-    {type: "match", index: number};
+    {type: "check", formula: ParseTree, index: number, source? : "root" | ParseTree} |
+    {type: "jump", target: number, index: number, source? : "root" | ParseTree} |
+    {type: "split", left: number, right: number, index: number, source? : "root" | ParseTree} |
+    {type: "match", index: number, source? : "root" | ParseTree};
 type
 Program = Array < Instruction >;
 
@@ -17,13 +17,14 @@ export class Compiler {
     }
 
     compileTree(tree:ParseTree, idx:number):Program {
+        console.log(`compile ${tree.type} at index ${idx}`);
         if (tree.type == parseTypes.GROUP) {
             // TODO: submatch saving
             return this.compileTree(tree.children[0], idx);
         }
         if (isPropositional(tree)) {
             console.log("tree " + JSON.stringify(tree) + ":" + tree.type + " is propositional");
-            return [{type: "check", formula: tree, index: idx}];
+            return [{type: "check", formula: tree, index: idx, source: tree}];
         }
         if (tree.type == parseTypes.CONCATENATION) {
             const aIdx = idx;
@@ -39,11 +40,11 @@ export class Compiler {
             const left = this.compileTree(tree.children[0], aIdx);
             const bIdx = aIdx + left.length + 1; // Leave room for jump after left
             // now we can define branch, which goes before left:
-            const branch = [{type: "split", left: aIdx, right: bIdx, index: idx}];
+            const branch = [{type: "split", left: aIdx, right: bIdx, index: idx, source: tree}];
             // right:
             const right = this.compileTree(tree.children[1], bIdx);
             const cIdx = bIdx + right.length;
-            const jump = [{type: "jump", target: cIdx, index: aIdx + left.length}];
+            const jump = [{type: "jump", target: cIdx, index: aIdx + left.length, source: tree}];
             return branch.concat(left).concat(jump).concat(right);
         }
         if (tree.type == parseTypes.INTERSECTION) {
@@ -82,7 +83,8 @@ export class Compiler {
                         type: "split",
                         left: (greedy ? targets[i] : idx),
                         right: (greedy ? idx : targets[i]),
-                        index: targets[i] - 1
+                        index: targets[i] - 1,
+                        source: tree
                     });
                     repetition.push(...(optionals[i]));
                 }
@@ -94,14 +96,15 @@ export class Compiler {
                 const bIdx = aIdx + 1;
                 // then put in B
                 const b = this.compileTree(phi, bIdx);
-                const jump = [{type: "jump", target: aIdx, index: bIdx + b.length}];
+                const jump = [{type: "jump", target: aIdx, index: bIdx + b.length, source: tree}];
                 // then label C
                 const cIdx = bIdx + b.length + 1;
                 const branch = [{
                     type: "split",
-                    left: (greedy ? bIdx + 1 : cIdx),
-                    right: (greedy ? cIdx : bIdx + 1),
-                    index: idx
+                    left: (greedy ? bIdx : cIdx),
+                    right: (greedy ? cIdx : bIdx),
+                    index: idx,
+                    source: tree
                 }];
                 return preface.concat(branch).concat(b).concat(jump);
             }
@@ -110,11 +113,17 @@ export class Compiler {
         return [];
     }
 
-    compile(tree:ParseTree):Program {
+    compile(tree:ParseTree, debug:bool = false):Program {
+        if (!tree.type && tree.tree && tree.errors && tree.remainder) {
+            throw new Error(
+                "Received a ParseResult, but expected a ParseTree." +
+                "Call compile() with the .tree element of " + tree
+            );
+        }
         // We preface every program with "true .." so that all Playspecs are effectively start-anchored.
         // This is as per https://swtch.com/~rsc/regexp/regexp2.html
         const preface = [
-            {type: "split", left: 2, right: 1, index: 0},
+            {type: "split", left: 2, right: 1, index: 0, source: "root"},
             {
                 type: "check",
                 formula: {
@@ -123,16 +132,26 @@ export class Compiler {
                     children: [],
                     range: {start: 0, end: 0}
                 },
-                index: 1
+                index: 1,
+                source: "root"
             },
-            {type: "jump", target: 0, index: 2}
+            {type: "jump", target: 0, index: 2, source: "root"}
         ];
         const body = this.compileTree(tree, preface.length);
-        const result = preface.concat(body).concat([{type: "match", index: preface.length + body.length}]);
+        const result = preface.concat(body).concat([{
+            type: "match",
+            index: preface.length + body.length,
+            source: "root"
+        }]);
         if (!this.validate(result)) {
             throw new Error(
                 "Error compiling tree " + JSON.stringify(tree) + " into result " + JSON.stringify(result)
             );
+        }
+        if (!debug) {
+            for (let i = 0; i < result.length; i++) {
+                delete result[i].source;
+            }
         }
         return result;
     }
@@ -143,5 +162,72 @@ export class Compiler {
         //ensure no split or jump goes beyond end of program
         //...
         return true;
+    }
+
+    stringifyCustom(formula:ParseTree):string {
+        const value = formula.value === undefined ? "" : formula.value.toString();
+        const children = formula.children && formula.children.length ?
+            (formula.children.map((c) => this.stringifyFormula(c))).join(",") :
+            "";
+        return `${formula.type}(${value},${children})`;
+    }
+
+    stringifyFormula(formula:ParseTree):string {
+        switch (formula.type) {
+            case parseTypes.TRUE:
+                return "true";
+            case parseTypes.FALSE:
+                return "false";
+            case parseTypes.START:
+                return "start";
+            case parseTypes.END:
+                return "end";
+            case parseTypes.AND:
+                return `${this.stringifyFormula(formula.children[0])} & ${this.stringifyFormula(formula.children[1])}`;
+            case parseTypes.OR:
+                return `${this.stringifyFormula(formula.children[0])} | ${this.stringifyFormula(formula.children[1])}`;
+            case parseTypes.NOT:
+                return `not ${this.stringifyFormula(formula.children[0])}`;
+            case parseTypes.GROUP:
+                return `(${this.stringifyFormula(formula.children[0])})`;
+            default:
+                return this.stringifyCustom(formula);
+        }
+    }
+
+    stringify(code:Program):string {
+        let result = [];
+        for (let i = 0; i < code.length; i++) {
+            const instr = code[i];
+            let instrStr = `${instr.index}:${instr.type}`;
+            switch (instr.type) {
+                case "split":
+                    instrStr += ` ${instr.left} ${instr.right}`;
+                    break;
+                case "jump":
+                    instrStr += ` ${instr.target}`;
+                    break;
+                case "check":
+                    instrStr += " " + this.stringifyFormula(instr.formula);
+                    break;
+                case "match":
+                    break;
+                default:
+                    throw new Error("Unrecognized instruction " + instr);
+            }
+            if (instr.source) {
+                if (instr.source == "root") {
+                    instrStr += "  \t\t(root)";
+                } else {
+                    if (instr.type == "check") {
+                        instrStr += `\t(ch. ${instr.source.range.start}-${instr.source.range.end})`;
+                    } else {
+                        instrStr += `\t\t(${instr.source.type} ${JSON.stringify(instr.source.value)})`;
+                    }
+                }
+            }
+            result.push(instrStr);
+        }
+        return result.join("\n");
     }
 }

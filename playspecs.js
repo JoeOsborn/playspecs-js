@@ -231,6 +231,7 @@ var Playspecs =
 	        if (parser.currentToken().type != tokenTypes.RIGHT_PAREN) {
 	            return parser.error("Missing right parenthesis", token, expr);
 	        }
+	        parser.advance();
 	        return parser.node(parseTypes.GROUP, token.value, [expr]);
 	    }
 	}, {
@@ -310,7 +311,7 @@ var Playspecs =
 	}
 	
 	function isPropositional(p) {
-	    return isCustom(p) || p.type == parseTypes.AND || p.type == parseTypes.OR || p.type == parseTypes.NOT || p.type == parseTypes.START || p.type == parseTypes.END || p.type == parseTypes.GROUP && p.children.every(function (c) {
+	    return isCustom(p) || p.type == parseTypes.AND || p.type == parseTypes.OR || p.type == parseTypes.NOT || p.type == parseTypes.TRUE || p.type == parseTypes.FALSE || p.type == parseTypes.START || p.type == parseTypes.END || p.type == parseTypes.GROUP && p.children.every(function (c) {
 	        return isPropositional(c);
 	    });
 	}
@@ -509,13 +510,14 @@ var Playspecs =
 	    _createClass(Compiler, [{
 	        key: "compileTree",
 	        value: function compileTree(tree, idx) {
+	            console.log("compile " + tree.type + " at index " + idx);
 	            if (tree.type == _parser.parseTypes.GROUP) {
 	                // TODO: submatch saving
 	                return this.compileTree(tree.children[0], idx);
 	            }
 	            if ((0, _parser.isPropositional)(tree)) {
 	                console.log("tree " + JSON.stringify(tree) + ":" + tree.type + " is propositional");
-	                return [{ type: "check", formula: tree, index: idx }];
+	                return [{ type: "check", formula: tree, index: idx, source: tree }];
 	            }
 	            if (tree.type == _parser.parseTypes.CONCATENATION) {
 	                var aIdx = idx;
@@ -531,11 +533,11 @@ var Playspecs =
 	                var _left = this.compileTree(tree.children[0], aIdx);
 	                var bIdx = aIdx + _left.length + 1; // Leave room for jump after left
 	                // now we can define branch, which goes before left:
-	                var branch = [{ type: "split", left: aIdx, right: bIdx, index: idx }];
+	                var branch = [{ type: "split", left: aIdx, right: bIdx, index: idx, source: tree }];
 	                // right:
 	                var _right = this.compileTree(tree.children[1], bIdx);
 	                var cIdx = bIdx + _right.length;
-	                var jump = [{ type: "jump", target: cIdx, index: aIdx + _left.length }];
+	                var jump = [{ type: "jump", target: cIdx, index: aIdx + _left.length, source: tree }];
 	                return branch.concat(_left).concat(jump).concat(_right);
 	            }
 	            if (tree.type == _parser.parseTypes.INTERSECTION) {}
@@ -572,7 +574,8 @@ var Playspecs =
 	                            type: "split",
 	                            left: greedy ? targets[i] : idx,
 	                            right: greedy ? idx : targets[i],
-	                            index: targets[i] - 1
+	                            index: targets[i] - 1,
+	                            source: tree
 	                        });
 	                        repetition.push.apply(repetition, _toConsumableArray(optionals[i]));
 	                    }
@@ -584,14 +587,15 @@ var Playspecs =
 	                    var bIdx = aIdx + 1;
 	                    // then put in B
 	                    var b = this.compileTree(phi, bIdx);
-	                    var jump = [{ type: "jump", target: aIdx, index: bIdx + b.length }];
+	                    var jump = [{ type: "jump", target: aIdx, index: bIdx + b.length, source: tree }];
 	                    // then label C
 	                    var cIdx = bIdx + b.length + 1;
 	                    var branch = [{
 	                        type: "split",
-	                        left: greedy ? bIdx + 1 : cIdx,
-	                        right: greedy ? cIdx : bIdx + 1,
-	                        index: idx
+	                        left: greedy ? bIdx : cIdx,
+	                        right: greedy ? cIdx : bIdx,
+	                        index: idx,
+	                        source: tree
 	                    }];
 	                    return preface.concat(branch).concat(b).concat(jump);
 	                }
@@ -602,9 +606,14 @@ var Playspecs =
 	    }, {
 	        key: "compile",
 	        value: function compile(tree) {
+	            var debug = arguments.length <= 1 || arguments[1] === undefined ? false : arguments[1];
+	
+	            if (!tree.type && tree.tree && tree.errors && tree.remainder) {
+	                throw new Error("Received a ParseResult, but expected a ParseTree." + "Call compile() with the .tree element of " + tree);
+	            }
 	            // We preface every program with "true .." so that all Playspecs are effectively start-anchored.
 	            // This is as per https://swtch.com/~rsc/regexp/regexp2.html
-	            var preface = [{ type: "split", left: 2, right: 1, index: 0 }, {
+	            var preface = [{ type: "split", left: 2, right: 1, index: 0, source: "root" }, {
 	                type: "check",
 	                formula: {
 	                    type: _parser.parseTypes.TRUE,
@@ -612,12 +621,22 @@ var Playspecs =
 	                    children: [],
 	                    range: { start: 0, end: 0 }
 	                },
-	                index: 1
-	            }, { type: "jump", target: 0, index: 2 }];
+	                index: 1,
+	                source: "root"
+	            }, { type: "jump", target: 0, index: 2, source: "root" }];
 	            var body = this.compileTree(tree, preface.length);
-	            var result = preface.concat(body).concat([{ type: "match", index: preface.length + body.length }]);
+	            var result = preface.concat(body).concat([{
+	                type: "match",
+	                index: preface.length + body.length,
+	                source: "root"
+	            }]);
 	            if (!this.validate(result)) {
 	                throw new Error("Error compiling tree " + JSON.stringify(tree) + " into result " + JSON.stringify(result));
+	            }
+	            if (!debug) {
+	                for (var i = 0; i < result.length; i++) {
+	                    delete result[i].source;
+	                }
 	            }
 	            return result;
 	        }
@@ -629,6 +648,78 @@ var Playspecs =
 	            //ensure no split or jump goes beyond end of program
 	            //...
 	            return true;
+	        }
+	    }, {
+	        key: "stringifyCustom",
+	        value: function stringifyCustom(formula) {
+	            var _this = this;
+	
+	            var value = formula.value === undefined ? "" : formula.value.toString();
+	            var children = formula.children && formula.children.length ? formula.children.map(function (c) {
+	                return _this.stringifyFormula(c);
+	            }).join(",") : "";
+	            return formula.type + "(" + value + "," + children + ")";
+	        }
+	    }, {
+	        key: "stringifyFormula",
+	        value: function stringifyFormula(formula) {
+	            switch (formula.type) {
+	                case _parser.parseTypes.TRUE:
+	                    return "true";
+	                case _parser.parseTypes.FALSE:
+	                    return "false";
+	                case _parser.parseTypes.START:
+	                    return "start";
+	                case _parser.parseTypes.END:
+	                    return "end";
+	                case _parser.parseTypes.AND:
+	                    return this.stringifyFormula(formula.children[0]) + " & " + this.stringifyFormula(formula.children[1]);
+	                case _parser.parseTypes.OR:
+	                    return this.stringifyFormula(formula.children[0]) + " | " + this.stringifyFormula(formula.children[1]);
+	                case _parser.parseTypes.NOT:
+	                    return "not " + this.stringifyFormula(formula.children[0]);
+	                case _parser.parseTypes.GROUP:
+	                    return "(" + this.stringifyFormula(formula.children[0]) + ")";
+	                default:
+	                    return this.stringifyCustom(formula);
+	            }
+	        }
+	    }, {
+	        key: "stringify",
+	        value: function stringify(code) {
+	            var result = [];
+	            for (var i = 0; i < code.length; i++) {
+	                var instr = code[i];
+	                var instrStr = instr.index + ":" + instr.type;
+	                switch (instr.type) {
+	                    case "split":
+	                        instrStr += " " + instr.left + " " + instr.right;
+	                        break;
+	                    case "jump":
+	                        instrStr += " " + instr.target;
+	                        break;
+	                    case "check":
+	                        instrStr += " " + this.stringifyFormula(instr.formula);
+	                        break;
+	                    case "match":
+	                        break;
+	                    default:
+	                        throw new Error("Unrecognized instruction " + instr);
+	                }
+	                if (instr.source) {
+	                    if (instr.source == "root") {
+	                        instrStr += "  \t\t(root)";
+	                    } else {
+	                        if (instr.type == "check") {
+	                            instrStr += "\t(ch. " + instr.source.range.start + "-" + instr.source.range.end + ")";
+	                        } else {
+	                            instrStr += "\t\t(" + instr.source.type + " " + JSON.stringify(instr.source.value) + ")";
+	                        }
+	                    }
+	                }
+	                result.push(instrStr);
+	            }
+	            return result.join("\n");
 	        }
 	    }]);
 	

@@ -434,6 +434,152 @@
             "value": ",",
             "children": [
                 {
+                    "type": "...",
+                    "value": {
+                        "greedy": true,
+                        "lowerBound": 3,
+                        "upperBound": 5
+                    },
+                    "children": [
+                        {
+                            "type": "true",
+                            "value": true,
+                            "children": [],
+                            "range": {
+                                "start": 0,
+                                "end": 0
+                            }
+                        }
+                    ],
+                    "range": {
+                        "start": 0,
+                        "end": 5
+                    }
+                },
+                {
+                    "type": "...",
+                    "value": {
+                        "greedy": true,
+                        "lowerBound": 0,
+                        "upperBound": "$END"
+                    },
+                    "children": [
+                        {
+                            "type": "(",
+                            "value": "(",
+                            "children": [
+                                {
+                                    "type": ";",
+                                    "value": ";",
+                                    "children": [
+                                        {
+                                            "type": "...",
+                                            "value": {
+                                                "greedy": false,
+                                                "lowerBound": 0,
+                                                "upperBound": 2
+                                            },
+                                            "children": [
+                                                {
+                                                    "type": "false",
+                                                    "value": false,
+                                                    "children": [],
+                                                    "range": {
+                                                        "start": 8,
+                                                        "end": 14
+                                                    }
+                                                }
+                                            ],
+                                            "range": {
+                                                "start": 8,
+                                                "end": 18
+                                            }
+                                        },
+                                        {
+                                            "type": ",",
+                                            "value": ",",
+                                            "children": [
+                                                {
+                                                    "type": "true",
+                                                    "value": true,
+                                                    "children": [],
+                                                    "range": {
+                                                        "start": 20,
+                                                        "end": 24
+                                                    }
+                                                },
+                                                {
+                                                    "type": ",",
+                                                    "value": ",",
+                                                    "children": [
+                                                        {
+                                                            "type": "false",
+                                                            "value": false,
+                                                            "children": [],
+                                                            "range": {
+                                                                "start": 26,
+                                                                "end": 31
+                                                            }
+                                                        },
+                                                        {
+                                                            "type": "true",
+                                                            "value": true,
+                                                            "children": [],
+                                                            "range": {
+                                                                "start": 33,
+                                                                "end": 37
+                                                            }
+                                                        }
+                                                    ],
+                                                    "range": {
+                                                        "start": 26,
+                                                        "end": 37
+                                                    }
+                                                }
+                                            ],
+                                            "range": {
+                                                "start": 20,
+                                                "end": 37
+                                            }
+                                        }
+                                    ],
+                                    "range": {
+                                        "start": 8,
+                                        "end": 37
+                                    }
+                                }
+                            ],
+                            "range": {
+                                "start": 7,
+                                "end": 39
+                            }
+                        }
+                    ],
+                    "range": {
+                        "start": 7,
+                        "end": 42
+                    }
+                }
+            ],
+            "range": {
+                "start": 0,
+                "end": 42
+            }
+        },
+        "errors": [],
+        "remainder": ""
+    };
+    desc("<p>The core Playspecs language can already exhibit relatively complex parse trees.</p>", function () {
+        var parser = new Playspecs.Parser.Parser({});
+        var parseResult = parser.parse("3...5, (false ..2 ; true, false, true) ...");
+        ex(parseResult, expectedParseResult);
+    });
+    expectedParseResult = {
+        "tree": {
+            "type": ",",
+            "value": ",",
+            "children": [
+                {
                     "type": "start",
                     "value": "start",
                     "children": [],

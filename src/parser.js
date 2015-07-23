@@ -38,9 +38,11 @@ export const parseTypes:{ [key: string]: string } = {
     ERROR: tokenTypes.ERROR
 };
 
-type MatchResult = Array < string >;
+type
+MatchResult = Array < string >;
 
-type TokenDefinition = Array < {
+type
+TokenDefinition = Array < {
         type: string,
         match: string | Array < string > | RegExp,
         value? : ((mr:MatchResult) => any),
@@ -49,7 +51,8 @@ type TokenDefinition = Array < {
         extendParse? : ((p:Parser, pt:ParseTree, t:Token) => ParseTree)
     } >;
 
-type Token = {
+type
+Token = {
     type: string,
     value: any,
     // A bit redundant, but makes defining generic startParse/extendParse functions easier.
@@ -57,22 +60,26 @@ type Token = {
     range: {start: number, end: number}
 };
 
-type ParseTree = {
+type
+ParseTree = {
     type: string,
     value: any,
     children: Array < ParseTree >,
     range: {start: number, end: number}
 };
 
-type TokenStream = {
+type
+TokenStream = {
     string: string,
     tokens: Array < Token >,
     position: number,
     errors: Array < number >
 };
 
-export const constantValue = function(c:any) {
-    return function(_mr:MatchResult) { return c; }
+export const constantValue = function (c:any) {
+    return function (_mr:MatchResult) {
+        return c;
+    }
 };
 
 export const parseValue = function (parser:Parser, token:Token) {
@@ -81,7 +88,7 @@ export const parseValue = function (parser:Parser, token:Token) {
 
 export const parseInfixR = function (parser:Parser, left:ParseTree, token:Token) {
     let children = [left];
-    children.push(parser.parseExpression(token.tightness-1));
+    children.push(parser.parseExpression(token.tightness - 1));
     return parser.node(token.type, token.value, children);
 };
 
@@ -90,7 +97,7 @@ export const parseInfixRPropositional = function (parser:Parser, left:ParseTree,
         return parser.error("Left hand side of token must be propositional", token, left);
     }
     let children = [left];
-    const right = parser.parseExpression(token.tightness-1);
+    const right = parser.parseExpression(token.tightness - 1);
     if (!isPropositional(right)) {
         return parser.error("Right hand side of token must be propositional", token, right);
     }
@@ -122,7 +129,7 @@ export const standardTokens:Array<TokenSchema> = [
             };
         },
         tightness: 110,
-        startParse: function(parser:Parser, token:Token):ParseTree {
+        startParse: function (parser:Parser, token:Token):ParseTree {
             const truePhi = parser.node(parseTypes.TRUE, true);
             truePhi.range.start = token.range.start;
             truePhi.range.end = token.range.start;
@@ -143,7 +150,7 @@ export const standardTokens:Array<TokenSchema> = [
                 upperBound: matchResult[2] ? parseInt(matchResult[2]) : BOUND_INFINITE
             };
         },
-        startParse: function(parser:Parser, token:Token):ParseTree {
+        startParse: function (parser:Parser, token:Token):ParseTree {
             const truePhi = parser.node(parseTypes.TRUE, true);
             truePhi.range.start = token.range.start;
             truePhi.range.end = token.range.start;
@@ -157,7 +164,7 @@ export const standardTokens:Array<TokenSchema> = [
         type: tokenTypes.DOTS_OMEGA,
         match: [tokenTypes.DOTS_OMEGA],
         tightness: 110,
-        startParse: function(parser:Parser, token:Token):ParseTree {
+        startParse: function (parser:Parser, token:Token):ParseTree {
             const truePhi = parser.node(parseTypes.TRUE, true);
             truePhi.range.start = token.range.start;
             truePhi.range.end = token.range.end;
@@ -173,9 +180,10 @@ export const standardTokens:Array<TokenSchema> = [
         startParse: function (parser:Parser, token:Token):ParseTree {
             //parse an expression at RBP 0, then eat a )
             const expr = parser.parseExpression(0);
-            if(parser.currentToken().type != tokenTypes.RIGHT_PAREN) {
+            if (parser.currentToken().type != tokenTypes.RIGHT_PAREN) {
                 return parser.error("Missing right parenthesis", token, expr);
             }
+            parser.advance();
             return parser.node(parseTypes.GROUP, token.value, [expr]);
         }
     },
@@ -257,8 +265,8 @@ function isString(s:any):bool {
 }
 
 export function isCustom(p:ParseTree):bool {
-    for(var k in parseTypes) {
-        if(parseTypes[k] == p.type) {
+    for (var k in parseTypes) {
+        if (parseTypes[k] == p.type) {
             return false;
         }
     }
@@ -270,10 +278,12 @@ export function isPropositional(p:ParseTree):bool {
         p.type == parseTypes.AND ||
         p.type == parseTypes.OR ||
         p.type == parseTypes.NOT ||
+        p.type == parseTypes.TRUE ||
+        p.type == parseTypes.FALSE ||
         p.type == parseTypes.START ||
         p.type == parseTypes.END ||
         (p.type == parseTypes.GROUP &&
-        p.children.every(function(c) {
+        p.children.every(function (c) {
             return isPropositional(c);
         }));
 }
@@ -294,7 +304,7 @@ export class Parser {
                 value: input.value || function (mr) {
                     return mr[0];
                 },
-                tightness: ti < customTokens.length ? tightness+customTightnessOffset : tightness,
+                tightness: ti < customTokens.length ? tightness + customTightnessOffset : tightness,
                 startParse: input.startParse || function (parser, token) {
                     return parser.error("Can't start a parse tree with this token", token);
                 },

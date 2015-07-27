@@ -47,18 +47,32 @@ var Playspecs =
 
 	"use strict";
 	
+	Object.defineProperty(exports, "__esModule", {
+	  value: true
+	});
+	
+	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+	
 	function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj["default"] = obj; return newObj; } }
 	
 	var _parser = __webpack_require__(1);
 	
-	var Parser = _interopRequireWildcard(_parser);
+	var ParserExports = _interopRequireWildcard(_parser);
 	
 	var _compiler = __webpack_require__(2);
 	
-	var Compiler = _interopRequireWildcard(_compiler);
+	var _compiler2 = _interopRequireDefault(_compiler);
 	
+	var _playspec = __webpack_require__(3);
+	
+	var _playspec2 = _interopRequireDefault(_playspec);
+	
+	var Parser = ParserExports;
 	exports.Parser = Parser;
+	var Compiler = _compiler2["default"];
 	exports.Compiler = Compiler;
+	var Playspec = _playspec2["default"];
+	exports.Playspec = Playspec;
 	
 	//const Parser = require("parser.js").Parser;
 	//
@@ -726,9 +740,125 @@ var Playspecs =
 	    return Compiler;
 	})();
 	
-	exports.Compiler = Compiler;
-	
+	exports["default"] = Compiler;
+	module.exports = exports["default"];
+
 	// TODO: intersection
+
+/***/ },
+/* 3 */
+/***/ function(module, exports, __webpack_require__) {
+
+	"use strict";
+	
+	Object.defineProperty(exports, "__esModule", {
+	    value: true
+	});
+	
+	var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
+	
+	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+	
+	function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+	
+	var _parserJs = __webpack_require__(1);
+	
+	var _compilerJs = __webpack_require__(2);
+	
+	var _compilerJs2 = _interopRequireDefault(_compilerJs);
+	
+	var Playspec = (function () {
+	    function Playspec(spec, context) {
+	        var debug = arguments.length <= 2 || arguments[2] === undefined ? false : arguments[2];
+	
+	        _classCallCheck(this, Playspec);
+	
+	        this.checkAPI = context.checks;
+	        this.traceAPI = context.trace;
+	        this.spec = spec;
+	        var parser = new _parserJs.Parser(context);
+	        var compiler = new _compilerJs2["default"](context);
+	        this.parseResult = parser.parse(spec);
+	        this.program = compiler.compile(this.parseResult.tree, debug);
+	    }
+	
+	    _createClass(Playspec, [{
+	        key: "check",
+	        value: function check(trace, state, idx, formula) {
+	            switch (formula.type) {
+	                case _parserJs.parseTypes.TRUE:
+	                    return true;
+	                case _parserJs.parseTypes.FALSE:
+	                    return false;
+	                case _parserJs.parseTypes.START:
+	                    return idx == 0;
+	                case _parserJs.parseTypes.END:
+	                    return this.traceAPI.isAtEnd(trace);
+	                case _parserJs.parseTypes.AND:
+	                    return this.check(trace, state, idx, formula.children[0]) && this.check(trace, state, idx, formula.children[1]);
+	                case _parserJs.parseTypes.OR:
+	                    return this.check(trace, state, idx, formula.children[0]) || this.check(trace, state, idx, formula.children[1]);
+	                case _parserJs.parseTypes.NOT:
+	                    return !this.check(trace, state, idx, formula.children[0]);
+	                case _parserJs.parseTypes.GROUP:
+	                    return this.check(trace, state, idx, formula.children[0]);
+	                default:
+	                    if (this.checkAPI[formula.type]) {
+	                        return this.checkAPI[formula.type](trace, state, idx, formula);
+	                    } else {
+	                        throw new Error("Unrecognized propositional formula", trace, state, formula);
+	                    }
+	            }
+	        }
+	    }, {
+	        key: "match",
+	        value: function match(trace) {
+	            var preserveStates = arguments.length <= 1 || arguments[1] === undefined ? false : arguments[1];
+	
+	            return new PlayspecResult({
+	                spec: this,
+	                trace: trace,
+	                preserveStates: preserveStates
+	            }, "$first").next();
+	        }
+	    }]);
+	
+	    return Playspec;
+	})();
+	
+	exports["default"] = Playspec;
+	
+	var PlayspecResult = (function () {
+	    function PlayspecResult(config, match) {
+	        _classCallCheck(this, PlayspecResult);
+	
+	        this.config = config;
+	        if (match != "$first") {
+	            this.start = match.start;
+	            this.end = match.end;
+	            this.states = match.states;
+	        } else {
+	            this.start = "$first";
+	            this.end = "$first";
+	            this.states = this.config.preserveStates ? [] : null;
+	        }
+	    }
+	
+	    _createClass(PlayspecResult, [{
+	        key: "next",
+	        value: function next() {
+	            //return new PlayspecResult(
+	            // this.config,
+	            // {start:blah, end:blah, states:this.config.preserveStates ? blah : undefined}
+	            // );
+	            return this;
+	        }
+	    }]);
+	
+	    return PlayspecResult;
+	})();
+
+	module.exports = exports["default"];
 
 /***/ }
 /******/ ]);

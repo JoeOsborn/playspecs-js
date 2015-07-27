@@ -8,8 +8,10 @@
 //
 //export Parser;
 
-import * as Parser from "./parser";
-import * as Compiler from "./compiler";
+import * as ParserExports from "./parser";
+import {default as CompilerExports} from "./compiler";
+import {default as PlayspecExports} from "./playspec";
 
-exports.Parser = Parser;
-exports.Compiler = Compiler;
+export const Parser = ParserExports;
+export const Compiler = CompilerExports;
+export const Playspec = PlayspecExports;

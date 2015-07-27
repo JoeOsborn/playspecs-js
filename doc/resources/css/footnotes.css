@@ -1,0 +1,15 @@
+
+div.footnotes {
+    border-top: 1px solid grey;
+    border-bottom: 1px solid grey;
+}
+div.footnotes:before {
+    content: "Footnotes:";
+}
+
+div.footnotes > div > p {
+    margin: 0;
+}
+div.footnotes > div {
+    margin-top: 1em;
+}

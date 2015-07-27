@@ -11,7 +11,7 @@ Instruction =
 type
 Program = Array < Instruction >;
 
-export class Compiler {
+export default class Compiler {
     constructor(_ctx) {
 
     }

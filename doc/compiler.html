@@ -549,8 +549,9 @@
         <p><a id="footnote-1" href="#ref-1">1.</a> Cox gives each program instruction the string index at
             which it was last activated, indicating instantly whether another thread is currently parked at that
             instruction. This effectively double-purposes the program as the set of current threads, but this approach
-            grows in complexity as more thread state is introduced. More importantly, we need to track the actual
-            pre-existing thread in order to merge threads, and providing instructions with pointers (or, as thread
+            grows in complexity as more thread state is introduced (e.g. for intersection, existential or universal
+            quantification, possibly for lookaround, and so on). More importantly, we need to track the actual
+            pre-existing threads in order to merge threads, and providing instructions with pointers (or, as thread
             equivalence becomes more complex, collections of pointers) to threads opens up issues of garbage collection,
             et cetera in the JavaScript implementation. Finally, for Playspec intersection we need to track additional
             sets of active threads to get the fork/join semantics we desire. Since we are already committing to

@@ -819,7 +819,7 @@ var Playspecs =
 	                spec: this,
 	                trace: trace,
 	                preserveStates: preserveStates
-	            }, "$first").next();
+	            }, undefined, undefined).next();
 	        }
 	    }]);
 	
@@ -828,18 +828,34 @@ var Playspecs =
 	
 	exports["default"] = Playspec;
 	
+	var Thread = function Thread(id, pc, priority) {
+	    _classCallCheck(this, Thread);
+	
+	    this.id = id;
+	    this.pc = pc;
+	    this.priority = priority;
+	};
+	
 	var PlayspecResult = (function () {
-	    function PlayspecResult(config, match) {
+	    function PlayspecResult(config, state, match) {
 	        _classCallCheck(this, PlayspecResult);
 	
 	        this.config = config;
-	        if (match != "$first") {
+	        this.state = state;
+	        if (!this.state) {
+	            this.state = {
+	                threads: [new Thread(0, 0, 0)],
+	                maxThreadID: 0
+	            };
+	        }
+	        this.match = match;
+	        if (this.match) {
 	            this.start = match.start;
 	            this.end = match.end;
 	            this.states = match.states;
 	        } else {
-	            this.start = "$first";
-	            this.end = "$first";
+	            this.start = -1;
+	            this.end = -1;
 	            this.states = this.config.preserveStates ? [] : null;
 	        }
 	    }
@@ -847,11 +863,13 @@ var Playspecs =
 	    _createClass(PlayspecResult, [{
 	        key: "next",
 	        value: function next() {
-	            //return new PlayspecResult(
-	            // this.config,
-	            // {start:blah, end:blah, states:this.config.preserveStates ? blah : undefined}
-	            // );
-	            return this;
+	            if (!this.state) {
+	                throw new Error("Don't call next() on the same PlayspecResult twice!", this);
+	            }
+	            // todo: ... interpret ...
+	            var result = new PlayspecResult(this.config, this.state, { start: 0, end: 0, states: this.config.preserveStates ? [] : undefined });
+	            this.state = undefined;
+	            return result;
 	        }
 	    }]);
 	

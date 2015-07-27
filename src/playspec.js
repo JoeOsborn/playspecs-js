@@ -46,28 +46,54 @@ export default class Playspec {
             spec:this,
             trace,
             preserveStates
-        }, "$first")).next();
+        }, undefined, undefined)).next();
+    }
+}
+
+class Thread {
+    constructor(id:number, pc:number, priority:number) {
+        this.id = id;
+        this.pc = pc;
+        this.priority = priority;
     }
 }
 
 class PlayspecResult {
-    constructor(config:{spec:Playspec, trace:Trace<State>, preserveStates:boolean}, match:PlayspecMatchResult) {
+    constructor(
+        config:{spec:Playspec, trace:Trace<State>, preserveStates:boolean},
+        state:{threads:Array<Thread>, maxThreadID:number},
+        match:PlayspecMatchResult
+    ) {
         this.config = config;
-        if(match != "$first") {
+        this.state = state;
+        if(!this.state) {
+            this.state = {
+                threads:[new Thread(0,0,0)],
+                maxThreadID:0
+            };
+        }
+        this.match = match;
+        if(this.match) {
             this.start = match.start;
             this.end = match.end;
             this.states = match.states;
         } else {
-            this.start = "$first";
-            this.end = "$first";
+            this.start = -1;
+            this.end = -1;
             this.states = this.config.preserveStates ? [] : null;
         }
     }
     next():PlayspecResult {
-        //return new PlayspecResult(
-        // this.config,
-        // {start:blah, end:blah, states:this.config.preserveStates ? blah : undefined}
-        // );
-        return this;
+        if(!this.state) {
+            throw new Error("Don't call next() on the same PlayspecResult twice!", this);
+        }
+        // todo: ... interpret ...
+        const result = new PlayspecResult(
+            this.config,
+            this.state,
+            {start:0, end:0, states:this.config.preserveStates ? [] : undefined}
+        );
+        this.state = undefined;
+        return result;
     }
 }

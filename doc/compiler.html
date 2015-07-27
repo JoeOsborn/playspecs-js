@@ -9,9 +9,24 @@
 
 <p>Compilation and interpretation of Playspecs follows the general pattern of the Thompson/Pike VM, quite clearly
     described by <a href="https://swtch.com/~rsc/regexp/regexp2.html">Russ Cox</a>. Briefly, the parse tree is compiled
-    into virtual machine instructions. In this document, we will start by addressing the basics, then show how custom
-    predicates are incorporated, and finally proceed to the compilation strategy for more advanced syntax like
-    intersection and subgroup matching which require new instructions.</p>
+    into virtual machine instructions which are then <a href="interpreter.html">interpreted</a>. In this document, we
+    will start by addressing the basics of compilation, then show how custom predicates are incorporated. Finally we
+    explore the addition of advanced features like subgroup matching and intersection.</p>
+
+<p>The VM is primarily a thread scheduler, where a thread is something like a single NFA state; for now, imagine that
+    each thread is defined simply by a program counter. Alternations and repetition spawn new threads (if equivalent
+    threads do not yet exist), and all threads are advanced in lockstep. Threads are synchronized on
+    <code class="bytecode">check Phi</code> instructions; other instructions roughly correspond to null transitions and
+    are executed as far as possible until reaching <code class="bytecode">check</code> or
+    <code class="bytecode">match</code> instructions. The result is that the number of trips through the thread queue is
+    bounded by the length of the play trace being matched.</p>
+
+<p>We start with "simple Playspecs", i.e. we ignore intersection for now. The core instructions are
+    <code class="bytecode">check Phi</code> (where <code class="bytecode">Phi</code> is a propositional formula),
+    <code class="bytecode">jump Target</code> (where <code class="bytecode">Target</code> is an integer describing the
+    unconditional jump destination), <code class="bytecode">split Left Right</code> (where both arguments are integers
+    describing program counter values), and <code class="bytecode">match</code> which indicates a thread has
+    successfully matched. The compilation strategy is detailed in the table below.</p>
 
 <table>
     <tr>
@@ -145,10 +160,10 @@
             "behavior so we use it directly. Its input is a <code>ParseTree</code> from the <code>Parser</code> " +
             "module. The game-specific context configuration object is passed to both; here, we use the Prom Week " +
             "example from the <a href='parser.html'><code>Parser</code> documentation</a>. Note that the output " +
-            "program has some additional front matter; every Playspec is implicitly anchored to <code>start</code>," +
-            "so that one linear check over the string always suffices to find all matches (as per " +
-            "<a href='https://swtch.com/~rsc/regexp/regexp2.html'>Russ Cox's note on unanchored expressions</a>)." +
-            "</p>", function () {
+            "program has some additional front matter; every Playspec is implicitly anchored to <code>start</code> " +
+            "as if prefixed by the reluctant repetition <code>..</code>, so that one linear check over the string " +
+            "always suffices to find all matches (as per <a href='https://swtch.com/~rsc/regexp/regexp2.html'>Russ " +
+            "Cox's note on unanchored expressions</a>).</p>", function () {
         var parser = new Playspecs.Parser.Parser(promWeek);
         var compiler = new Playspecs.Compiler.Compiler(promWeek);
         var parseTree = parser.parse("start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end").tree;
@@ -355,8 +370,97 @@
         ex(stringProgram, expectedStringProgram);
     });
 </script>
+
+<h1>Interpretation</h1>
+
+<p>For the purposes of this document, we'll introduce another domain for Playspecs: a hypothetical game whose moves are
+    all represented by single upper- and lowercase letters. Reasonable questions to ask about states of this game
+    include whether a particular letter describes the state or whether the letter is uppercase. In practice, if a
+    game's traces can be defined so simply then conventional string regular expressions should serve the role of
+    Playspecs quite well! But we will work from this simple case for now so that the semantics of the interpreter are
+    easier to explain without bringing in too many details from a "real" game.</p>
+
+<h2>The letters domain</h2>
+<script>
+    var lettersContext = {
+        tokens: [
+            {
+                type: "LETTER",
+                match: /^[a-z](?![a-z])/,
+                startParse: Playspecs.Parser.parseValue
+            },
+            {
+                type: "UPPER",
+                match: "upper",
+                startParse: Playspecs.Parser.parseValue
+            }
+        ],
+        trace: {
+            start: function(traceData) {
+                return {data:traceData, index:0};
+            },
+            currentState: function(trace) {
+                return trace.data[trace.index];
+            },
+            advanceState: function(trace) {
+                if(trace.index < trace.data.length) {
+                    trace.index++;
+                }
+            },
+            isAtEnd: function(trace) {
+                return trace.index >= trace.data.length;
+            }
+        },
+        checks: {
+            LETTER: function(_trace, state, letterNode) {
+                return letterNode.value == state.toLowerCase();
+            },
+            UPPER: function(_trace, state, _letterNode) {
+                return state.toUpperCase() == state;
+            }
+        }
+    };
+    desc("<p>The tokens of the <code>lettersContext</code> only come in two types, and both are values. For an " +
+            "example Playspec, consider <code>start, a & upper, (b;c) ...</code> for any letter, then an uppercase " +
+            "<code>a</code>, then a sequence of upper- and lowercase <code>b</code>s and <code>c</code>s. Note that " +
+            "the character-checking formulae accept both upper- and lowercase letters, and <code>upper</code> must " +
+            "be used to distinguish them.</p>");
+    desc("<p>Next, we must introduce additional features of the game-specify context object. Specifically, we need " +
+            "to define what a trace is and how the interpreter can read it. In the letters domain, we can use a " +
+            "string to represent the whole trace. Assuming that a Playspec is executed against some generic " +
+            "<code>traceData</code> object (a string in this case), the context must provide at least these four " +
+            "functions for progressing through the trace:</p>", function() {
+        ex(lettersContext.trace);
+    });
+    desc("<p>The interpreter first calls <code>start</code> on its argument to get a kind of iterator for the " +
+            "<code>trace</code>. Then, until <code>isAtEnd</code> returns a truthy value, the interpreter repeatedly " +
+            "checks <code>currentState</code> against all threads and then calls <code>advanceState</code>. In " +
+            "the letters domain, we return the letter as our state; but we could just as well return the character " +
+            "index and let the formula-checking functions get the character from the underlying string.</p>");
+    desc("<p>Finally, we must give a way to define the meaning of terms like <code>UPPER</code> (or, in the case of " +
+            "Prom Week, <code>LINK_RELATIONSHIP</code>). Since multiple token types may be parsed into one formula " +
+            "type, and one token type could parse into several different types of formula, we require that games " +
+            "provide a separate map from formula types to \"check functions\" which take the current trace, current " +
+            "game state, and a parse tree as arguments, and return a boolean indicating whether the condition is " +
+            "met. In the letters domain, the token types and formula types line up, but this is not true in general." +
+            "</p>", function() {
+        ex(lettersContext.checks);
+    });
+</script>
+
+<h2>Simple Playspecs</h2>
+
+general flow
+
+greedy vs reluctant and match ordering
+
 <p>Adding new features to this Playspecs implementation mainly involves devising new parse tokens and gadgets, sometimes
-    requiring new VM instructions and occasionally new bits of thread state. We leave off a discussion of threads and
-    their state for the <a href="interpreter.html"><code>Interpreter</code>'s documentation</a>.</p>
+    requiring new VM instructions and occasionally new bits of thread state.</p>
+
+
+<h2>Intersection</h2>
+
+<h2>Subgroup Matching</h2>
+
 </body>
 </html>

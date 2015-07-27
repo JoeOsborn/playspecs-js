@@ -3,7 +3,7 @@ var exResults = [];
 
 //viz. http://jsfiddle.net/KJQ9K/554/
 function syntaxHighlight(json) {
-    json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    json = json.replace(/&/g, '&amp;');//.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
         var cls = 'number';
         if (/^"/.test(match)) {
@@ -29,6 +29,10 @@ function prettify(json) {
 var descCounter = 0;
 
 function desc(str, func) {
+    if(!func) {
+        document.write(str);
+        return;
+    }
     var out = "";
     out += str;
     var funcBody = func.toString();
@@ -87,6 +91,13 @@ function isString(s) {
     return typeof s === 'string' || s instanceof String;
 }
 
+function fnReplacer(_key, value) {
+    if(typeof(value) == "function") {
+        return value.toString().replace(/\n/g,"<br/>");
+    }
+    return value;
+}
+
 function ex(v1, v2) {
     var result;
     if (isString(v1) && (v2 === undefined || isString(v2))) {
@@ -97,8 +108,8 @@ function ex(v1, v2) {
         };
     } else {
         result = {
-            left: JSON.stringify(v1, null, 2),
-            right: (v2 === undefined ? undefined : JSON.stringify(v2, null, 2)),
+            left: JSON.stringify(v1, fnReplacer, 2),
+            right: (v2 === undefined ? undefined : JSON.stringify(v2, fnReplacer, 2)),
             isJSON: true
         };
     }

@@ -147,7 +147,7 @@
         ]
     };
     var expectedStringProgram =
-            "0:split 2 1\n" +
+            "0:split 3 1\n" +
             "1:check true\n" +
             "2:jump 0\n" +
             "3:check start\n" +
@@ -172,7 +172,7 @@
         ex(program, [
             {
                 "type": "split",
-                "left": 2,
+                "left": 3,
                 "right": 1,
                 "index": 0
             },
@@ -338,7 +338,7 @@
     });
     var parser = new Playspecs.Parser.Parser(promWeek);
     var compiler = new Playspecs.Compiler(promWeek);
-    expectedStringProgram = "0:split 2 1  \t\t(root)\n" +
+    expectedStringProgram = "0:split 3 1  \t\t(root)\n" +
             "1:check true  \t\t(root)\n" +
             "2:jump 0  \t\t(root)\n" +
             "3:check true\t(ch. 0-0)\n" +
@@ -404,12 +404,13 @@
                 return trace.data[trace.index];
             },
             advanceState: function (trace) {
-                if (trace.index < trace.data.length) {
+                if (trace.index < trace.data.length-1) {
                     trace.index++;
                 }
             },
             isAtEnd: function (trace) {
-                return trace.index >= trace.data.length;
+                // Is it at the last safe index? Note this isn't "isPastEnd"!
+                return trace.index >= trace.data.length-1;
             }
         },
         checks: {
@@ -486,13 +487,27 @@
         ex(twoMatches.start, 0);
         ex(twoMatches.end, 2);
         // Eventually, it will return null
-        ex(twoMatches.next(), null);
+        twoMatches = twoMatches.next();
+        ex(twoMatches, null);
         // Preserving state sequences:
         var oneMatch = spec.match("AA", true);
         ex(oneMatch.start, 0);
         ex(oneMatch.end, 2);
         // If sequences are preserved, there will be a `states` key on the `PlayspecResult`.
         ex(oneMatch.states.join(""), "AA");
+        // Matches can also occur in the middle of a trace.
+        var spec2 = new Playspecs.Playspec("b", lettersContext);
+        var threeMatches = spec2.match("ababab");
+        ex(threeMatches.start,1);
+        ex(threeMatches.end,2);
+        threeMatches = threeMatches.next();
+        ex(threeMatches.start,3);
+        ex(threeMatches.end,4);
+        threeMatches = threeMatches.next();
+        ex(threeMatches.start,5);
+        ex(threeMatches.end,6);
+        threeMatches = threeMatches.next();
+        ex(threeMatches,null);
     });
 </script>
 
@@ -506,24 +521,24 @@
 <h2>Simple Playspecs</h2>
 
 <p>The rough outline of the interpreter follows Russ Cox's version of the Pike VM. First, a single thread is created and
-    added to the thread queue. This addition may trigger the spawning of more threads, since flow control is handled by
-    the <code>enqueueThread</code> function (called <code>addThread</code> in Cox's articles). An outer loop advances
-    the string (in our case, the game trace) until it reaches the end, a match is found, or there are no live threads.
-    The inner loop goes through each thread in the queue&mdash;each of which is by construction "stuck" at a
-    <code class="bytecode">check</code> or <code class="bytecode">match</code> instruction&mdash;and verifies that the
-    current state satisfies its condition (or, in case of a <code class="bytecode">match</code>, marks the presence of a
-    match). If not, the thread is terminated; otherwise the thread's program counter is advanced and the thread is
-    re-queued (again, possibly creating more threads).</p>
+    added to the thread queue. This addition may trigger the spawning of more threads, since flow control and match
+    detection are handled by the <code>enqueueThread</code> function (called <code>addThread</code> in Cox's articles).
+    An outer loop advances the string (in our case, the game trace) until it reaches the end, a match is found, or there
+    are no live threads. The inner loop goes through each thread in the queue&mdash;each of which is by construction
+    "stuck" at a <code class="bytecode">check</code> instruction&mdash;and verifies that the current state satisfies its
+    condition. If not, the thread is terminated; otherwise the thread's program counter is advanced and the thread is
+    re-queued (again, possibly creating more threads). During queueing, if any thread enters a
+    <code class="bytecode">match</code> instruction, it is recorded in the match set and not returned to the queue.</p>
 
-<p>The <code>enqueueThread</code> function is not allowed to duplicate threads: duplicates are always of lower priority
-    than the duplicated thread, since threads are advanced in priority order. For Cox's requirements, it suffices to
-    discard duplicates (since he only wants to know whether there is any match, and in a pinch its beginning and end).
-    For Playspecs, we actually want to return all matches so we must merge rather than discard the duplicate threads.
-    This distinction will become important when we consider subgroup matching later on. Keeping all matches (and using
-    additional thread state, which we need to do for Playspec intersection) leads to some overhead, especially for
-    duplicate detection<sup><a href="#footnote-1" id="ref-1">1</a></sup>. The upshot is that we separate the queue of
-    scheduled processes from the set of processes which exist in that queue, since we want to avoid linear scans over
-    the queue when doing duplicate checking.</p>
+<p>The <code>enqueueThread</code> function is not allowed to duplicate threads: duplicates are always of lower
+    priority than the duplicated thread, since threads are advanced in priority order. For Cox's requirements, it
+    suffices to discard duplicates (since he only wants to know whether there is any match, and in a pinch its beginning
+    and end). For Playspecs, we actually want to return all matches so we must merge rather than discard the duplicate
+    threads. This distinction will become important when we consider subgroup matching later on. Keeping all matches
+    (and using additional thread state, which we need to do for Playspec intersection) leads to some overhead,
+    especially for duplicate detection<sup><a href="#footnote-1" id="ref-1">1</a></sup>. The upshot is that we separate
+    the queue of scheduled processes from the set of processes which exist in that queue, since we want to avoid linear
+    scans over the queue when doing duplicate checking.</p>
 
 <p>Some more words on priority: like Cox's implementation, the right side of a split is scheduled at a lower priority
     than the left side. No other instruction (except our <code class="bytecode">fork</code>, to be introduced later)
@@ -537,7 +552,8 @@
     which obtained it (which will also be the lowest-priority thread which obtained it). If the interpreter is about to
     advance to the next state, but the best match has a lower priority than the best thread in the queue, the match is
     instead de-queued and yielded. In some cases, the interpreter could yield several matches in a row before advancing
-    the state any further!</p>
+    the state any further; this state can be detected by the <code>hasReadyMatch()</code> method of
+    <code>PlayspecResult</code> objects.</p>
 
 <p>We do want to prevent duplicate matches, so within a single advance of the trace we track which matches have been
     seen and only enqueue the first one. Matches which cover different ranges of the trace by definition will not be
@@ -556,7 +572,7 @@
             et cetera in the JavaScript implementation. Finally, for Playspec intersection we need to track additional
             sets of active threads to get the fork/join semantics we desire. Since we are already committing to
             implementing external sets of threads, we may as well use the same code for the live thread set, for
-            simplicity.</p>
+            simplicity. Unfortunately, we also can't avoid creating a thread duplicating one we've already seen on the current trace state: because the merge might merge data that comes from steps subsequent to the duplicate detection, we can only do duplicate checking and merging of "stuck" threads.</p>
     </div>
 </div>
 

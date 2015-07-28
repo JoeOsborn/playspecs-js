@@ -73,6 +73,7 @@ function desc(str, func) {
                 (isJSON ? prettify(left) : left) +
                 (isJSON ? prettify(right) : right) +
                 "</details>";
+            console.log("Expected "+(isJSON ? prettify(left) : left)+", got "+(isJSON ? prettify(right) : right));
             errorCount++;
         }
     }

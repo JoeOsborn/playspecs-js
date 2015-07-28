@@ -123,7 +123,7 @@ export default class Compiler {
         // We preface every program with "true .." so that all Playspecs are effectively start-anchored.
         // This is as per https://swtch.com/~rsc/regexp/regexp2.html
         const preface = [
-            {type: "split", left: 2, right: 1, index: 0, source: "root"},
+            {type: "split", left: 3, right: 1, index: 0, source: "root"},
             {
                 type: "check",
                 formula: {

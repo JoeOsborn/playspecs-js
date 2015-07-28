@@ -627,7 +627,7 @@ var Playspecs =
 	            }
 	            // We preface every program with "true .." so that all Playspecs are effectively start-anchored.
 	            // This is as per https://swtch.com/~rsc/regexp/regexp2.html
-	            var preface = [{ type: "split", left: 2, right: 1, index: 0, source: "root" }, {
+	            var preface = [{ type: "split", left: 3, right: 1, index: 0, source: "root" }, {
 	                type: "check",
 	                formula: {
 	                    type: _parser.parseTypes.TRUE,
@@ -806,7 +806,7 @@ var Playspecs =
 	                    if (this.checkAPI[formula.type]) {
 	                        return this.checkAPI[formula.type](trace, state, idx, formula);
 	                    } else {
-	                        throw new Error("Unrecognized propositional formula", trace, state, formula);
+	                        throw new Error("Unrecognized propositional formula");
 	                    }
 	            }
 	        }
@@ -817,9 +817,8 @@ var Playspecs =
 	
 	            return new PlayspecResult({
 	                spec: this,
-	                trace: trace,
 	                preserveStates: preserveStates
-	            }, undefined, undefined).next();
+	            }, { trace: trace }, undefined).next();
 	        }
 	    }]);
 	
@@ -828,13 +827,359 @@ var Playspecs =
 	
 	exports["default"] = Playspec;
 	
-	var Thread = function Thread(id, pc, priority) {
-	    _classCallCheck(this, Thread);
+	var Thread = (function () {
+	    function Thread(id, pc, priority, matches) {
+	        _classCallCheck(this, Thread);
 	
-	    this.id = id;
-	    this.pc = pc;
-	    this.priority = priority;
+	        this.id = id;
+	        this.pc = pc;
+	        this.priority = priority;
+	        this.matches = matches;
+	        this.sharedMatches = true;
+	    }
+	
+	    _createClass(Thread, [{
+	        key: "equals",
+	        value: function equals(t2) {
+	            return this.pc == t2.pc;
+	        }
+	    }, {
+	        key: "hash",
+	        value: function hash() {
+	            return this.pc;
+	        }
+	    }, {
+	        key: "mergeThread",
+	        value: function mergeThread(other) {
+	            if (this.sharedMatches) {
+	                this.matches = this.matches.slice();
+	            }
+	            for (var i = 0; i < other.matches.length; i++) {
+	                var found = false;
+	                for (var j = 0; j < this.matches.length; j++) {
+	                    if (matchEquivFn(this.matches[j], other.matches[i])) {
+	                        found = true;
+	                    }
+	                }
+	                if (!found) {
+	                    this.matches.push(other.sharedMatches ? cloneMatch(other.matches[i]) : other.matches[i]);
+	                }
+	            }
+	            // Merge any other state
+	        }
+	    }, {
+	        key: "hasOpenMatch",
+	        value: function hasOpenMatch() {
+	            for (var i = 0; i < this.matches.length; i++) {
+	                var instrs = this.matches[i].instructions;
+	                var _open = 0;
+	                for (var j = 0; j < instrs.length; j++) {
+	                    if (instrs[j].type == "start") {
+	                        _open++;
+	                    } else if (instrs[j].type == "end") {
+	                        _open--;
+	                    }
+	                }
+	                if (_open > 0) {
+	                    return true;
+	                }
+	            }
+	            return false;
+	        }
+	    }, {
+	        key: "pushMatchInstruction",
+	        value: function pushMatchInstruction(instr) {
+	            if (this.sharedMatches) {
+	                this.matches = this.matches.slice();
+	            }
+	            for (var i = 0; i < this.matches.length; i++) {
+	                if (this.sharedMatches) {
+	                    this.matches[i] = cloneMatch(this.matches[i]);
+	                }
+	                this.matches[i].priority = Math.max(this.priority, this.matches[i].priority);
+	                this.matches[i].instructions.push(instr);
+	            }
+	            this.sharedMatches = false;
+	        }
+	    }]);
+	
+	    return Thread;
+	})();
+	
+	var NonReplacingHashMap = (function () {
+	    function NonReplacingHashMap(equivFn, hashFn) {
+	        var bucketCount = arguments.length <= 2 || arguments[2] === undefined ? 1000 : arguments[2];
+	
+	        _classCallCheck(this, NonReplacingHashMap);
+	
+	        this.equiv = equivFn;
+	        this.hash = hashFn;
+	        this.coll = new Array(bucketCount);
+	        this.length = 0;
+	    }
+	
+	    _createClass(NonReplacingHashMap, [{
+	        key: "bucketFind",
+	        value: function bucketFind(bucket, obj) {
+	            for (var i = 0; i < bucket.length; i++) {
+	                if (this.equiv ? this.equiv(bucket[i].key, obj) : bucket[i].key == obj) {
+	                    return bucket[i].val;
+	                }
+	            }
+	            return undefined;
+	        }
+	    }, {
+	        key: "push",
+	
+	        // If val is not provided, it defaults to true
+	        // Unlike a regular map, this will NOT replace existing keys!
+	        value: function push(obj) {
+	            var val = arguments.length <= 1 || arguments[1] === undefined ? undefined : arguments[1];
+	
+	            if (!val) {
+	                val = true;
+	            }
+	            var hashCode = this.hash ? this.hash(obj) % this.coll.length : obj;
+	            var bucket = this.coll[hashCode];
+	            if (!bucket) {
+	                this.coll[hashCode] = [{ key: obj, val: val }];
+	            } else {
+	                if (this.bucketFind(bucket, obj) !== undefined) {
+	                    return false;
+	                } else {
+	                    bucket.push({ key: obj, val: val });
+	                }
+	            }
+	            this.length++;
+	            return true;
+	        }
+	    }, {
+	        key: "get",
+	        value: function get(obj) {
+	            if (this.length == 0) {
+	                return undefined;
+	            }
+	            var hashCode = this.hash ? this.hash(obj) % this.coll.length : obj;
+	            var bucket = this.coll[hashCode];
+	            if (!bucket) {
+	                return undefined;
+	            }
+	            return this.bucketFind(bucket, obj);
+	        }
+	    }, {
+	        key: "clear",
+	        value: function clear() {
+	            for (var i = 0; i < this.coll.length; i++) {
+	                //todo: generate less garbage?
+	                this.coll[i] = null;
+	            }
+	            this.length = 0;
+	        }
+	    }, {
+	        key: "contains",
+	        value: function contains(obj) {
+	            if (this.length == 0) {
+	                return false;
+	            }
+	            var hashCode = this.hash ? this.hash(obj) % this.coll.length : obj;
+	            var bucket = this.coll[hashCode];
+	            if (!bucket) {
+	                return false;
+	            }
+	            return this.bucketFind(bucket, obj) !== undefined;
+	        }
+	    }]);
+	
+	    return NonReplacingHashMap;
+	})();
+	
+	function hashInt(h, int32) {
+	    h += int32 | 0;
+	    h += h << 10 | 0;
+	    h ^= h >> 6 | 0;
+	    h += int32 >> 8 | 0;
+	    h += h << 10 | 0;
+	    h ^= h >> 6 | 0;
+	    h += int32 >> 16 | 0;
+	    h += h << 10 | 0;
+	    h ^= h >> 6 | 0;
+	    h += int32 >> 24 | 0;
+	    h += h << 10 | 0;
+	    h ^= h >> 6 | 0;
+	    return h;
+	}
+	function finalizeHash(h) {
+	    h += h << 3 | 0;
+	    h ^= h >> 11 | 0;
+	    h += h << 15 | 0;
+	    return h;
+	}
+	function hashNumbers() {
+	    var h = 0;
+	
+	    for (var _len = arguments.length, numbers = Array(_len), _key = 0; _key < _len; _key++) {
+	        numbers[_key] = arguments[_key];
+	    }
+	
+	    for (var i = 0; i < numbers.length; i++) {
+	        h = hashInt(h, numbers[i]);
+	    }
+	    return finalizeHash(h);
+	}
+	
+	var matchEquivFn = function matchEquivFn(a, b) {
+	    if (a.instructions.length != b.instructions.length) {
+	        return false;
+	    }
+	    for (var i = 0; i < a.instructions.length; i++) {
+	        if (a[i].type != b[i].type || a[i].index != b[i].index || a[i].target != b[i].target) {
+	            return false;
+	        }
+	    }
+	    return true;
 	};
+	var matchHashFn = function matchHashFn(a) {
+	    return hashNumbers(a.instructions.length);
+	};
+	
+	function cloneMatch(m) {
+	    return {
+	        priority: m.priority,
+	        instructions: m.instructions.slice()
+	    };
+	}
+	
+	var NonShrinkingArray = (function () {
+	    function NonShrinkingArray() {
+	        _classCallCheck(this, NonShrinkingArray);
+	
+	        this.array = [];
+	        this.length = 0;
+	    }
+	
+	    _createClass(NonShrinkingArray, [{
+	        key: "push",
+	        value: function push(obj) {
+	            this.array[this.length] = obj;
+	            this.length++;
+	        }
+	    }, {
+	        key: "clear",
+	        value: function clear() {
+	            this.length = 0;
+	        }
+	    }, {
+	        key: "get",
+	        value: function get(i) {
+	            if (i < 0 || i >= this.length) {
+	                return undefined;
+	            }
+	            return this.array[i];
+	        }
+	    }, {
+	        key: "first",
+	        get: function get() {
+	            if (this.length == 0) {
+	                return undefined;
+	            }
+	            return this.array[0];
+	        }
+	    }]);
+	
+	    return NonShrinkingArray;
+	})();
+	
+	// We know a priori that the number of priority levels is relatively small
+	
+	var PriorityQueue = (function () {
+	    function PriorityQueue(pfn, equivFn, hashFn) {
+	        _classCallCheck(this, PriorityQueue);
+	
+	        this.queues = [];
+	        this.priorityFunction = pfn;
+	        this.length = 0;
+	        if (equivFn || hashFn) {
+	            this.members = new NonReplacingHashMap(equivFn, hashFn);
+	        } else {
+	            this.members = undefined;
+	        }
+	        this.clear();
+	    }
+	
+	    _createClass(PriorityQueue, [{
+	        key: "push",
+	
+	        // We also know a priori that duplicates will be detected externally if there is no equivFn/hashFn
+	        value: function push(obj) {
+	            var idx = this.priorityFunction(obj);
+	            if (this.members) {
+	                if (this.members.contains(obj)) {
+	                    return false;
+	                }
+	                this.members.push(obj);
+	            }
+	            if (!(idx in this.queues)) {
+	                this.queues[idx] = [obj];
+	            } else {
+	                this.queues[idx].push(obj);
+	            }
+	            if (idx < this.lowestPriority) {
+	                this.lowestPriority = idx;
+	            }
+	            if (idx > this.highestPriority) {
+	                this.highestPriority = idx;
+	            }
+	            this.length++;
+	            return true;
+	        }
+	    }, {
+	        key: "shift",
+	        value: function shift() {
+	            if (this.lowestPriority >= Infinity || this.length == 0) {
+	                return null;
+	            }
+	            var q = this.queues[this.lowestPriority];
+	            var result = q.shift();
+	            if (q.length == 0) {
+	                delete this.queues[this.lowestPriority];
+	                if (this.highestPriority <= this.lowestPriority) {
+	                    this.lowestPriority = Infinity;
+	                    this.highestPriority = -Infinity;
+	                } else {
+	                    while (!this.queues[this.lowestPriority] && this.lowestPriority < this.highestPriority) {
+	                        this.lowestPriority++;
+	                    }
+	                }
+	            }
+	            this.length--;
+	            return result;
+	        }
+	    }, {
+	        key: "clear",
+	        value: function clear() {
+	            //todo: generate less garbage
+	            this.queues = [];
+	            this.lowestPriority = Infinity;
+	            this.highestPriority = -Infinity;
+	            this.length = 0;
+	            if (this.members) {
+	                this.members.clear();
+	            }
+	        }
+	    }, {
+	        key: "first",
+	        get: function get() {
+	            if (this.length == 0) {
+	                return undefined;
+	            }
+	            return this.queues[this.lowestPriority][0];
+	        }
+	    }]);
+	
+	    return PriorityQueue;
+	})();
+	
+	var LIVESET_CLEAR_INTERVAL = 100;
 	
 	var PlayspecResult = (function () {
 	    function PlayspecResult(config, state, match) {
@@ -842,34 +1187,219 @@ var Playspecs =
 	
 	        this.config = config;
 	        this.state = state;
-	        if (!this.state) {
+	        if (!this.state || !this.state.queue) {
 	            this.state = {
-	                threads: [new Thread(0, 0, 0)],
-	                maxThreadID: 0
+	                // We can use plain arrays for the priority queue for now, since we know threads will be added
+	                // in priority order. This also means we never shift, but increment i going up through the queue.
+	                queue: new NonShrinkingArray(),
+	                nextQueue: new NonShrinkingArray(),
+	                // This NonReplacingHashMap will have number keys so it can use default hash/equiv
+	                liveSet: new NonReplacingHashMap(null, null),
+	                maxThreadID: 0,
+	                index: 0,
+	                pastEnd: false,
+	                trace: this.config.spec.traceAPI.start(state.trace),
+	                // Same here for matches, always added in priority order -- but can use a regular array
+	                matchQueue: new PriorityQueue(function (m) {
+	                    return m.priority;
+	                }),
+	                matchSet: new NonReplacingHashMap(matchEquivFn, matchHashFn)
 	            };
+	            var initThread = new Thread(0, 0, 0, [{ priority: 0, instructions: [] }]);
+	            initThread.pushMatchInstruction({ type: "start", index: 0, target: "$root", priority: 0 });
+	            this.enqueueThread(initThread);
+	            //swap queues
+	            var temp = this.state.queue;
+	            this.state.queue = this.state.nextQueue;
+	            this.state.nextQueue = temp;
+	            //clear live and match sets
+	            this.state.liveSet.clear();
+	            this.state.matchSet.clear();
 	        }
 	        this.match = match;
-	        if (this.match) {
-	            this.start = match.start;
-	            this.end = match.end;
-	            this.states = match.states;
-	        } else {
-	            this.start = -1;
-	            this.end = -1;
-	            this.states = this.config.preserveStates ? [] : null;
-	        }
 	    }
 	
 	    _createClass(PlayspecResult, [{
+	        key: "hasReadyMatch",
+	        value: function hasReadyMatch() {
+	            if (!this.state.matchQueue.length) {
+	                return false;
+	            }
+	            if (!this.state.queue.length) {
+	                return true;
+	            }
+	            return this.state.matchQueue.first.priority <= this.state.queue.first.priority;
+	        }
+	    }, {
+	        key: "enqueueThread",
+	        value: function enqueueThread(thread) {
+	            // Unlike Cox's implementation, we can only do duplicate checking for threads that are about to park.
+	            // So we'll do some redundant jumping/splitting/matching, but since we need to merge threads it can't
+	            // really be avoided.
+	            var instr = this.config.spec.program[thread.pc];
+	            switch (instr.type) {
+	                case "jump":
+	                    thread.pc = instr.target;
+	                    this.enqueueThread(thread);
+	                    return;
+	                case "split":
+	                    this.state.maxThreadID++;
+	                    thread.pc = instr.left;
+	                    thread.sharedMatches = true;
+	                    var thread2 = new Thread(this.state.maxThreadID, instr.right, thread.priority + 1, thread.matches);
+	                    this.enqueueThread(thread);
+	                    this.enqueueThread(thread2);
+	                    return;
+	                case "match":
+	                    thread.pushMatchInstruction({
+	                        type: "end",
+	                        target: "$root",
+	                        index: this.state.index + 1
+	                    });
+	                    for (var i = 0; i < thread.matches.length; i++) {
+	                        if (thread.matches[i].priority >= thread.priority) {
+	                            // If it's a novel match...
+	                            if (this.state.matchSet.push(thread.matches[i])) {
+	                                // Add it to the queue!
+	                                this.state.matchQueue.push(thread.matches[i]);
+	                            }
+	                        }
+	                    }
+	                    //drop thread, its work is done
+	                    return;
+	                case "check":
+	                    // check live set, then add to queue
+	                    var hash = thread.hash();
+	                    var live = this.state.liveSet.get(hash);
+	                    if (!live) {
+	                        var threadList = new NonShrinkingArray();
+	                        threadList.push(thread);
+	                        this.state.liveSet.push(hash, { index: this.state.index, threads: threadList });
+	                    } else if (live.index != this.state.index) {
+	                        live.index = this.state.index;
+	                        live.threads.clear();
+	                        live.threads.push(thread);
+	                    } else {
+	                        //maybe present
+	                        for (var i = 0; i < live.threads.length; i++) {
+	                            if (live.threads.get(i).equals(thread)) {
+	                                live.threads.get(i).mergeThread(thread);
+	                                // Drop the merged-in thread, no more work to do
+	                                return;
+	                            }
+	                        }
+	                    }
+	                    //not present: add stuck thread to queue.
+	                    this.state.nextQueue.push(thread);
+	                    return;
+	                //todo: case fork, join, joined-left, joined-right, start-group, end-group.
+	                // joined-left and joined-right will need to handle merging!
+	                default:
+	                    throw new Error("Unrecognized instruction type ${instr.type}");
+	            }
+	        }
+	    }, {
+	        key: "prettifyMatch",
+	        value: function prettifyMatch(m) {
+	            //todo:proper prettification, get states out, stacked groups, etc
+	            return {
+	                start: m.instructions[0].index,
+	                end: m.instructions[m.instructions.length - 1].index,
+	                states: m.instructions.filter(function (i) {
+	                    return i.type == "state";
+	                }).map(function (i) {
+	                    return i.state;
+	                })
+	            };
+	        }
+	    }, {
 	        key: "next",
 	        value: function next() {
 	            if (!this.state) {
-	                throw new Error("Don't call next() on the same PlayspecResult twice!", this);
+	                throw new Error("Don't call next() on the same PlayspecResult twice!");
 	            }
-	            // todo: ... interpret ...
-	            var result = new PlayspecResult(this.config, this.state, { start: 0, end: 0, states: this.config.preserveStates ? [] : undefined });
+	            while (!this.hasReadyMatch() && this.state.queue.length) {
+	                var _state = this.config.spec.traceAPI.currentState(this.state.trace);
+	                var copiedState = undefined;
+	                var limit = this.state.queue.length;
+	                for (var t = 0; t < this.state.queue.length; t++) {
+	                    if (t >= limit) {
+	                        throw new Error("The thread queue should never grow during a single trace state!");
+	                    }
+	                    var thread = this.state.queue.get(t);
+	                    var instr = this.config.spec.program[thread.pc];
+	                    switch (instr.type) {
+	                        case "check":
+	                            var checkResult = this.config.spec.check(this.state.trace, _state, this.state.index, instr.formula);
+	                            if (checkResult) {
+	                                thread.pc++;
+	                                if (thread.hasOpenMatch) {
+	                                    if (this.config.preserveStates) {
+	                                        if (!copiedState) {
+	                                            copiedState = this.config.spec.traceAPI.copyCurrentState ? this.config.spec.traceAPI.copyCurrentState() : _state;
+	                                        }
+	                                        thread.pushMatchInstruction({
+	                                            type: "state",
+	                                            index: this.state.index,
+	                                            state: copiedState
+	                                        });
+	                                    }
+	                                }
+	                                this.enqueueThread(thread);
+	                            } //otherwise drop the thread on the floor
+	                            break;
+	                        default:
+	                            throw new Error("Thread should be parked on a check.");
+	                    }
+	                }
+	                //swap queues and clear old queue
+	                var temp = this.state.queue;
+	                this.state.queue = this.state.nextQueue;
+	                temp.clear();
+	                this.state.nextQueue = temp;
+	                //maybe clear liveset (don't want to do it every time, so short specs/strings can avoid memory churn)
+	                if (this.state.index % LIVESET_CLEAR_INTERVAL == 0) {
+	                    this.state.liveSet.clear();
+	                }
+	                //definitely clear matchset (later matches won't ever be equivalent to matches from this time)
+	                this.state.matchSet.clear();
+	                //advance, unless already at end
+	                if (this.config.spec.traceAPI.isAtEnd(this.state.trace)) {
+	                    //wipe out queue, no more trace to match!
+	                    this.state.queue.clear();
+	                    break;
+	                }
+	                this.config.spec.traceAPI.advanceState(this.state.trace);
+	                this.state.index++;
+	            }
+	            if (this.hasReadyMatch()) {
+	                // Also removes first match from queue!
+	                var match = this.state.matchQueue.shift();
+	                var prettyMatch = this.prettifyMatch(match);
+	                var nextState = this.state;
+	                this.state = undefined;
+	                return new PlayspecResult(this.config, nextState, prettyMatch);
+	            } // Otherwise, we're out of queue or trace and have nowhere to go
 	            this.state = undefined;
-	            return result;
+	            return null;
+	        }
+	    }, {
+	        key: "start",
+	        get: function get() {
+	            return this.match ? this.match.start : -1;
+	        }
+	    }, {
+	        key: "end",
+	        get: function get() {
+	            return this.match ? this.match.end : -1;
+	        }
+	    }, {
+	        key: "states",
+	        get: function get() {
+	            if (this.config.preserveStates) {
+	                return this.match ? this.match.states : undefined;
+	            }
+	            return undefined;
 	        }
 	    }]);
 	

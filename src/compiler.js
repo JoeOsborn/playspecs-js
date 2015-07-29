@@ -17,13 +17,13 @@ export default class Compiler {
     }
 
     compileTree(tree:ParseTree, idx:number):Program {
-        console.log(`compile ${tree.type} at index ${idx}`);
+        //console.log(`compile ${tree.type} at index ${idx}`);
         if (tree.type == parseTypes.GROUP) {
             // TODO: submatch saving
             return this.compileTree(tree.children[0], idx);
         }
         if (isPropositional(tree)) {
-            console.log("tree " + JSON.stringify(tree) + ":" + tree.type + " is propositional");
+            //console.log("tree " + JSON.stringify(tree) + ":" + tree.type + " is propositional");
             return [{type: "check", formula: tree, index: idx, source: tree}];
         }
         if (tree.type == parseTypes.CONCATENATION) {

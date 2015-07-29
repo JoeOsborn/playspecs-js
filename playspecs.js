@@ -524,13 +524,13 @@ var Playspecs =
 	    _createClass(Compiler, [{
 	        key: "compileTree",
 	        value: function compileTree(tree, idx) {
-	            console.log("compile " + tree.type + " at index " + idx);
+	            //console.log(`compile ${tree.type} at index ${idx}`);
 	            if (tree.type == _parser.parseTypes.GROUP) {
 	                // TODO: submatch saving
 	                return this.compileTree(tree.children[0], idx);
 	            }
 	            if ((0, _parser.isPropositional)(tree)) {
-	                console.log("tree " + JSON.stringify(tree) + ":" + tree.type + " is propositional");
+	                //console.log("tree " + JSON.stringify(tree) + ":" + tree.type + " is propositional");
 	                return [{ type: "check", formula: tree, index: idx, source: tree }];
 	            }
 	            if (tree.type == _parser.parseTypes.CONCATENATION) {
@@ -834,8 +834,12 @@ var Playspecs =
 	        this.id = id;
 	        this.pc = pc;
 	        this.priority = priority;
-	        this.matches = matches;
-	        this.sharedMatches = true;
+	        //match sharing: instead set this.matches to matches and set sharedMatches to true
+	        this.matches = matches.map(function (m) {
+	            var m2 = cloneMatch(m);
+	            m2.priority = Math.max(priority, m.priority);
+	            return m2;
+	        });
 	    }
 	
 	    _createClass(Thread, [{
@@ -851,9 +855,9 @@ var Playspecs =
 	    }, {
 	        key: "mergeThread",
 	        value: function mergeThread(other) {
-	            if (this.sharedMatches) {
-	                this.matches = this.matches.slice();
-	            }
+	            // Match sharing: if matches are shared, replace matches list with slice of matches list,
+	            // and insert either clones of other's matches (if other is sharing matches) or other's matches directly
+	            // Also update priority of new matches
 	            for (var i = 0; i < other.matches.length; i++) {
 	                var found = false;
 	                for (var j = 0; j < this.matches.length; j++) {
@@ -862,7 +866,9 @@ var Playspecs =
 	                    }
 	                }
 	                if (!found) {
-	                    this.matches.push(other.sharedMatches ? cloneMatch(other.matches[i]) : other.matches[i]);
+	                    var match = cloneMatch(other.matches[i]);
+	                    match.priority = Math.max(this.priority, this.matches[i].priority);
+	                    this.matches.push(match);
 	                }
 	            }
 	            // Merge any other state
@@ -871,16 +877,7 @@ var Playspecs =
 	        key: "hasOpenMatch",
 	        value: function hasOpenMatch() {
 	            for (var i = 0; i < this.matches.length; i++) {
-	                var instrs = this.matches[i].instructions;
-	                var _open = 0;
-	                for (var j = 0; j < instrs.length; j++) {
-	                    if (instrs[j].type == "start") {
-	                        _open++;
-	                    } else if (instrs[j].type == "end") {
-	                        _open--;
-	                    }
-	                }
-	                if (_open > 0) {
+	                if (this.matches[i].instructions.length > 0) {
 	                    return true;
 	                }
 	            }
@@ -889,17 +886,12 @@ var Playspecs =
 	    }, {
 	        key: "pushMatchInstruction",
 	        value: function pushMatchInstruction(instr) {
-	            if (this.sharedMatches) {
-	                this.matches = this.matches.slice();
-	            }
+	            // Match sharing: if matches are shared, replace matches list with a new list containing clones of matches
+	            // Also update priority of matches
+	            // And set sharedMatches to false
 	            for (var i = 0; i < this.matches.length; i++) {
-	                if (this.sharedMatches) {
-	                    this.matches[i] = cloneMatch(this.matches[i]);
-	                }
-	                this.matches[i].priority = Math.max(this.priority, this.matches[i].priority);
 	                this.matches[i].instructions.push(instr);
 	            }
-	            this.sharedMatches = false;
 	        }
 	    }]);
 	
@@ -1139,7 +1131,8 @@ var Playspecs =
 	                return null;
 	            }
 	            var q = this.queues[this.lowestPriority];
-	            var result = q.shift();
+	            // Within a priority level, we want the _reverse_ order of addition
+	            var result = q.pop();
 	            if (q.length == 0) {
 	                delete this.queues[this.lowestPriority];
 	                if (this.highestPriority <= this.lowestPriority) {
@@ -1203,10 +1196,11 @@ var Playspecs =
 	                matchQueue: new PriorityQueue(function (m) {
 	                    return m.priority;
 	                }),
-	                matchSet: new NonReplacingHashMap(matchEquivFn, matchHashFn)
+	                matchSet: new NonReplacingHashMap(matchEquivFn, matchHashFn),
+	                lastMatchPriority: 0
 	            };
 	            var initThread = new Thread(0, 0, 0, [{ priority: 0, instructions: [] }]);
-	            initThread.pushMatchInstruction({ type: "start", index: 0, target: "$root", priority: 0 });
+	            initThread.pushMatchInstruction({ type: "start", index: 0, target: "$root" });
 	            this.enqueueThread(initThread);
 	            //swap queues
 	            var temp = this.state.queue;
@@ -1245,7 +1239,8 @@ var Playspecs =
 	                case "split":
 	                    this.state.maxThreadID++;
 	                    thread.pc = instr.left;
-	                    thread.sharedMatches = true;
+	                    //match sharing: Be sure thread1 knows thread2 is using its matches.
+	                    //thread.sharedMatches = true;
 	                    var thread2 = new Thread(this.state.maxThreadID, instr.right, thread.priority + 1, thread.matches);
 	                    this.enqueueThread(thread);
 	                    this.enqueueThread(thread2);
@@ -1322,9 +1317,13 @@ var Playspecs =
 	                var _state = this.config.spec.traceAPI.currentState(this.state.trace);
 	                var copiedState = undefined;
 	                var limit = this.state.queue.length;
+	                var lastPriority = 0;
 	                for (var t = 0; t < this.state.queue.length; t++) {
 	                    if (t >= limit) {
 	                        throw new Error("The thread queue should never grow during a single trace state!");
+	                    }
+	                    if (t.priority < lastPriority) {
+	                        throw new Error("Decreasing priority!");
 	                    }
 	                    var thread = this.state.queue.get(t);
 	                    var instr = this.config.spec.program[thread.pc];
@@ -1375,6 +1374,10 @@ var Playspecs =
 	            if (this.hasReadyMatch()) {
 	                // Also removes first match from queue!
 	                var match = this.state.matchQueue.shift();
+	                if (this.state.lastMatchPriority > match.priority) {
+	                    throw new Error("Matches popped out of order!");
+	                }
+	                this.state.lastMatchPriority = match.priority;
 	                var prettyMatch = this.prettifyMatch(match);
 	                var nextState = this.state;
 	                this.state = undefined;

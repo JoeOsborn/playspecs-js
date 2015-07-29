@@ -1,0 +1,274 @@
+<html>
+<head>
+    <link rel="stylesheet" href="resources/css/explain.css"/>
+    <link rel="stylesheet" href="resources/css/footnotes.css"/>
+    <script src="resources/js/explain.js"></script>
+    <script src="../playspecs.js"></script>
+</head>
+<body>
+
+<h1>Interpretation</h1>
+
+<p>In this document, we will show an end-to-end use of Playspecs. We introduce a new "game" whose states are letters,
+    showing how custom predicates are incorporated as atomic formulae. Then we explain the virtual machine approach to
+    Playspec checking, following <a href="https://swtch.com/~rsc/regexp/regexp2.html">Russ Cox</a>. Finally, we explore
+    the addition of advanced features like subgroup matching and intersection.</p>
+
+<p>For the purposes of this document, we'll introduce another domain for Playspecs: a hypothetical game whose moves are
+    all represented by single upper- and lowercase letters. Reasonable questions to ask about states of this game
+    include whether a particular letter describes the state or whether the letter is uppercase. In practice, if a
+    game's traces can be defined so simply then conventional string regular expressions should serve the role of
+    Playspecs quite well! But we will work from this simple case for now so that the semantics of the interpreter are
+    easier to explain without bringing in too many details from a "real" game.</p>
+
+<h2>The letters domain</h2>
+<script>
+    var lettersContext = {
+        tokens: [
+            {
+                type: "LETTER",
+                match: /^[a-z](?![a-z])/,
+                startParse: Playspecs.Parser.parseValue
+            },
+            {
+                type: "UPPER",
+                match: "upper",
+                startParse: Playspecs.Parser.parseValue
+            }
+        ],
+        trace: {
+            start: function (traceData) {
+                return {data: traceData, index: 0};
+            },
+            currentState: function (trace) {
+                return trace.data[trace.index];
+            },
+            advanceState: function (trace) {
+                if (trace.index < trace.data.length - 1) {
+                    trace.index++;
+                }
+            },
+            isAtEnd: function (trace) {
+                // Is it at the last safe index? Note this isn't "isPastEnd"!
+                return trace.index >= trace.data.length - 1;
+            }
+        },
+        checks: {
+            LETTER: function (_trace, state, _idx, letterNode) {
+                return letterNode.value == state.toLowerCase();
+            },
+            UPPER: function (_trace, state, _idx, _letterNode) {
+                return state.toUpperCase() == state;
+            }
+        }
+    };
+    desc("<p>The tokens of the <code>lettersContext</code> only come in two types, and both are values. For an " +
+            "example Playspec, consider <code>start, a & upper, (b;c) ...</code> for any letter, then an uppercase " +
+            "<code>a</code>, then a sequence of zero or more upper- and lowercase <code>b</code>s and " +
+            "<code>c</code>s. Note that the character-checking formulae accept both upper- and lowercase letters, " +
+            "and <code>upper</code> must be used to distinguish them.</p>");
+    desc("<p>Next, we must introduce additional features of the game-specify context object. Specifically, we need " +
+            "to define what a trace is and how the interpreter can read it. In the letters domain, we can use a " +
+            "string to represent the whole trace. Assuming that a Playspec is executed against some generic " +
+            "<code>traceData</code> object (a string in this case), the context must provide at least these four " +
+            "functions for progressing through the trace:</p>", function () {
+        ex(lettersContext.trace);
+    });
+    desc("<p>The interpreter first calls <code>start</code> on its argument to get a kind of iterator for the " +
+            "<code>trace</code>. Then, until <code>isAtEnd</code> returns a truthy value, the interpreter repeatedly " +
+            "checks <code>currentState</code> against all threads and then calls <code>advanceState</code>. In " +
+            "the letters domain, we return the letter as our state; but we could just as well return the character " +
+            "index and let the formula-checking functions get the character from the underlying string.</p>");
+    desc("<p>Finally, we must give a way to define the meaning of terms like <code>UPPER</code> (or, in the case of " +
+            "Prom Week, <code>LINK_RELATIONSHIP</code>). Since multiple token types may be parsed into one formula " +
+            "type, and one token type could parse into several different types of formula, we require that games " +
+            "provide a separate map from formula types to \"check functions\" which take the current trace, current " +
+            "game state, current state index, and a parse tree as arguments, and return a boolean indicating whether " +
+            "the condition is met. In the letters domain, the token types and formula types line up, but this is not " +
+            "necessarily the case.</p>", function () {
+        ex(lettersContext.checks);
+        // We'll make a trivial Playspec just to show how propositional formulae work.
+        var testSpec = new Playspecs.Playspec("true", lettersContext);
+        // The private method "check" handles propositional formulae.
+        ex(testSpec.check("aBc", "a", 0, {
+            type: "LETTER",
+            value: "a",
+            children: []
+        }), true);
+        ex(testSpec.check("aBc", "B", 1, {
+            type: Playspecs.Parser.parseTypes.AND,
+            children: [
+                {type: "LETTER", value: "b", children: []},
+                {type: "UPPER", value: "upper", children: []}
+            ]
+        }), true);
+        ex(testSpec.check("aBc", "c", 2, {
+            type: Playspecs.Parser.parseTypes.OR,
+            children: [
+                {type: "LETTER", value: "a", children: []},
+                {type: "UPPER", value: "upper", children: []}
+            ]
+        }), false);
+    });
+    desc("<p>Playspecs themselves are executed using the <code>match(trace)</code> and <code>next()</code> methods " +
+            "of <code>Playspec</code> and <code>PlayspecResult</code> respectively. A Boolean argument may also be " +
+            "passed to <code>match</code> to preserve the state sequences as well as the ranges. Never call " +
+            "<code>next()</code> on the same <code>PlayspecResult</code> twice.</p>", function () {
+        var spec = new Playspecs.Playspec("start, a & upper, (b;c) ...", lettersContext);
+        // This trace won't match:
+        var none = spec.match("zB");
+        ex(none, null);
+        // This will match twice: first zAb, then zA.
+        var twoMatches = spec.match("zAb");
+        ex(twoMatches.start, 0);
+        ex(twoMatches.end, 3);
+        // Call `.next()` on the match result to get the next match, a fresh `PlayspecResult` object.
+        twoMatches = twoMatches.next();
+        ex(twoMatches.start, 0);
+        ex(twoMatches.end, 2);
+        // Eventually, it will return null
+        twoMatches = twoMatches.next();
+        ex(twoMatches, null);
+
+        // Greedy vs reluctant matching:
+        var reverseMatches = new Playspecs.Playspec("start, a & upper, (b;c) ..", lettersContext);
+        // This will match twice: first zA, then zAb.
+        var twoMatchesReverse = reverseMatches.match("zAb");
+        ex(twoMatchesReverse.start, 0);
+        ex(twoMatchesReverse.end, 2);
+        twoMatchesReverse = twoMatchesReverse.next();
+        ex(twoMatchesReverse.start, 0);
+        ex(twoMatchesReverse.end, 3);
+        // It won't return different matches, just a different order of matches.
+        twoMatchesReverse = twoMatchesReverse.next();
+        ex(twoMatchesReverse, null);
+
+        // Preserving state sequences:
+        var oneMatch = spec.match("AA", true);
+        ex(oneMatch.start, 0);
+        ex(oneMatch.end, 2);
+        // If sequences are preserved, there will be a `states` key on the `PlayspecResult`.
+        ex(oneMatch.states.join(""), "AA");
+        // Matches can also occur in the middle of a trace.
+        var spec2 = new Playspecs.Playspec("b", lettersContext);
+        var threeMatches = spec2.match("ababab");
+        ex(threeMatches.start, 1);
+        ex(threeMatches.end, 2);
+        threeMatches = threeMatches.next();
+        ex(threeMatches.start, 3);
+        ex(threeMatches.end, 4);
+        threeMatches = threeMatches.next();
+        ex(threeMatches.start, 5);
+        ex(threeMatches.end, 6);
+        threeMatches = threeMatches.next();
+        ex(threeMatches, null);
+    });
+</script>
+
+<p>If a <code>copyCurrentState</code> function is provided by the <code>trace</code> API, it will be called on states
+    before preserving them when <code>true</code> is passed to <code>match</code>. It has the same interface as
+    <code>currentState</code> but is expected to return an object that will not change if <code>advanceState</code> is
+    called. This can be important if the game state is a mutable data structure, so it is not necessary in the letters
+    domain. Even without <code>copyCurrentState</code>, it is strongly advised to isolate traces from one another, so
+    that multiple Playspecs can safely be checked concurrently.</p>
+
+<h2>Simple Playspecs</h2>
+
+<p>The rough outline of the interpreter follows Russ Cox's version of the Pike VM. First, a single thread is created and
+    added to the thread queue. This addition may trigger the spawning of more threads, since flow control and match
+    detection are handled by the <code>enqueueThread</code> function (called <code>addThread</code> in Cox's articles).
+    An outer loop advances the string (in our case, the game trace) until it reaches the end, a match is found, or there
+    are no live threads. The inner loop goes through each thread in the queue&mdash;each of which is by construction
+    "stuck" at a <code class="bytecode">check</code> instruction&mdash;and verifies that the current state satisfies its
+    condition. If not, the thread is terminated; otherwise the thread's program counter is advanced and the thread is
+    re-queued (again, possibly creating more threads). During queueing, if any thread enters a
+    <code class="bytecode">match</code> instruction, it is recorded in the match set and not returned to the queue.</p>
+
+<p>The <code>enqueueThread</code> function is not allowed to duplicate threads: duplicates are always of lower
+    priority than the duplicated thread, since threads are advanced in priority order. For Cox's requirements, it
+    suffices to discard duplicates (since he only wants to know whether there is any match, and in a pinch its beginning
+    and end). For Playspecs, we actually want to return all matches so we must merge rather than discard the duplicate
+    threads. This distinction will become important when we consider subgroup matching later on. Keeping all matches
+    (and using additional thread state, which we need to do for Playspec intersection) leads to some overhead,
+    especially for duplicate detection<sup><a href="#footnote-1" id="ref-1">1</a></sup>. The upshot is that we separate
+    the queue of scheduled processes from the set of processes which exist in that queue, since we want to avoid linear
+    scans over the queue when doing duplicate checking.</p>
+
+<p>Some more words on priority: like Cox's implementation, the right side of a split is scheduled at a lower priority
+    than the left side. No other instruction (except our <code class="bytecode">fork</code>, to be introduced later)
+    increases the number of threads. Matches are returned in priority order to give correct greedy vs reluctant
+    semantics: in short, to mirror the order in which a backtracking implementation would return matches. It may happen,
+    especially with greedy repetition, that a shorter match could complete on a given state of the trace while a longer,
+    better match is not yet complete. We still want to yield that shorter match, but we would prefer to give the longer
+    one first.</p>
+
+<p>To achieve this, we also store a priority queue of matches. The priority of a match is the same as the first thread
+    which obtained it (which will also be the lowest-priority thread which obtained it), and ties between matches are
+    broken by preferring the <em>later</em> match (to accommodate greedy semantics). If the interpreter is about to
+    advance to the next state, but the best match has a lower priority than the best thread in the queue, the match is
+    instead de-queued and yielded. In some cases, the interpreter could yield several matches in a row before advancing
+    the state any further; this state can be detected by the <code>hasReadyMatch()</code> method of
+    <code>PlayspecResult</code> objects.</p>
+
+<p>We do want to prevent duplicate matches, so within a single advance of the trace we track which matches have been
+    seen and only enqueue the first one. Matches which cover different ranges of the trace by definition will not be
+    equivalent, so we don't need to track all matches found by the Playspec&mdash;just the ones found this time
+    around.</p>
+
+<div class="footnotes">
+    <div>
+        <p><a id="footnote-1" href="#ref-1">1.</a> Cox gives each program instruction the string index at
+            which it was last activated, indicating instantly whether another thread is currently parked at that
+            instruction. This effectively double-purposes the program as the set of current threads, but this approach
+            grows in complexity as more thread state is introduced (e.g. for intersection, existential or universal
+            quantification, possibly for lookaround, and so on). More importantly, we need to track the actual
+            pre-existing threads in order to merge threads, and providing instructions with pointers (or, as thread
+            equivalence becomes more complex, collections of pointers) to threads opens up issues of garbage collection,
+            et cetera in the JavaScript implementation. Finally, for Playspec intersection we need to track additional
+            sets of active threads to get the fork/join semantics we desire. Since we are already committing to
+            implementing external sets of threads, we may as well use the same code for the live thread set, for
+            simplicity. Unfortunately, we also can't avoid creating a thread duplicating one we've already seen on the
+            current trace state: because the merge might merge data that comes from steps subsequent to the duplicate
+            detection, we can only do duplicate checking and merging of "stuck" threads.</p>
+    </div>
+</div>
+
+
+<h2>Some enhancements</h2>
+
+<p>Adding new features to this Playspecs implementation mainly involves devising new parse tokens and gadgets, sometimes
+    requiring new VM instructions and new thread state (in some cases, extending the notions of thread equivalence and
+    thread merging). We now show two substantial enhancements, intersection and subgroup matching. These two features
+    interact in significant ways that strongly influence their design, so some decisions made in pursuit of intersection
+    may seem a little strange at first&mdash;but they seem to be necessary for efficiently combining both intersection
+    and subgroup matching.</p>
+
+<h3>Subgroup Matching</h3>
+
+<h3>Intersection</h3>
+
+<p>In an explicitly automata-based regular expression engine, an intersection operator could be obtained by
+    calculating NFA representations of the two operands, determinizing those, and intersecting them. This could lead
+    to a blowup in the size of the resulting automaton. For our purposes, and because we want to stay in the virtual
+    machine framework, we introduce a kind of fork/join semantics which is extremely constrained: for certain threads we
+    have a different acceptance condition besides reaching a <code class="bytecode">match</code> instruction, and this
+    corresponds to the "both sides finish at the same time" semantics we give to intersection. Complications include the
+    fact that intersections can be arbitrarily sequenced and nested, and that we want to keep all subgroup matches
+    occurring before <em>and within each branch</em> of the intersection.</p>
+
+<p>Consequently, we're forced to maintain for each thread a stack of the intersections in which it's embedded, where
+    each intersection is recorded as a fork index (the <em>k</em>th fork instruction has index <em>k</em>) and the
+    starting index in the trace (recall that both sides of an intersection must consume the same amount of trace). Only
+    traces with the same stack entries may be joined (in case they match at the same time) or merged (in case they
+    duplicate equivalent traces <em>on the same side of the intersection</em>). To find joined pairs without scanning
+    the whole instruction queue, we keep a separate join-set which is keyed on both stack data (so traces corresponding
+    to different intersections or starting at different positions can't be joined) and left/right side (so e.g. two
+    left-operands of an intersection that match simultaneously can't join together, but can be easily merged). As an
+    optimization, we also keep a liveness-set which records if a thread is live on one side or the other of an
+    intersection with a given fork key. If only one side of a given fork key has active threads then it is terminated
+    (since the other side has no threads, it was not possible to match it, so any more effort spent matching the first
+    side is wasted).</p>
+
+
+</body>
+</html>

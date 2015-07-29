@@ -56,8 +56,12 @@ class Thread {
         this.id = id;
         this.pc = pc;
         this.priority = priority;
-        this.matches = matches;
-        this.sharedMatches = true;
+        //match sharing: instead set this.matches to matches and set sharedMatches to true
+        this.matches = matches.map(function(m) {
+            let m2 = cloneMatch(m);
+            m2.priority = Math.max(priority, m.priority);
+            return m2;
+        });
     }
 
     equals(t2:Thread):boolean {
@@ -69,9 +73,9 @@ class Thread {
     }
 
     mergeThread(other:Thread) {
-        if(this.sharedMatches) {
-            this.matches = this.matches.slice();
-        }
+        // Match sharing: if matches are shared, replace matches list with slice of matches list,
+        // and insert either clones of other's matches (if other is sharing matches) or other's matches directly
+        // Also update priority of new matches
         for(let i = 0; i < other.matches.length; i++) {
             let found = false;
             for(let j = 0; j < this.matches.length; j++) {
@@ -80,7 +84,9 @@ class Thread {
                 }
             }
             if(!found) {
-                this.matches.push(other.sharedMatches ? cloneMatch(other.matches[i]) : other.matches[i]);
+                let match = cloneMatch(other.matches[i]);
+                match.priority = Math.max(this.priority,this.matches[i].priority);
+                this.matches.push(match);
             }
         }
         // Merge any other state
@@ -88,16 +94,7 @@ class Thread {
 
     hasOpenMatch():boolean {
         for(let i = 0; i < this.matches.length; i++) {
-            const instrs = this.matches[i].instructions;
-            let open = 0;
-            for(let j = 0; j < instrs.length; j++) {
-                if(instrs[j].type == "start") {
-                    open++;
-                } else if(instrs[j].type == "end") {
-                    open--;
-                }
-            }
-            if(open > 0) {
+            if(this.matches[i].instructions.length > 0) {
                 return true;
             }
         }
@@ -105,17 +102,12 @@ class Thread {
     }
 
     pushMatchInstruction(instr:MatchInstruction) {
-        if(this.sharedMatches) {
-            this.matches = this.matches.slice();
-        }
+        // Match sharing: if matches are shared, replace matches list with a new list containing clones of matches
+        // Also update priority of matches
+        // And set sharedMatches to false
         for(let i = 0; i < this.matches.length; i++) {
-            if(this.sharedMatches) {
-                this.matches[i] = cloneMatch(this.matches[i]);
-            }
-            this.matches[i].priority = Math.max(this.priority, this.matches[i].priority);
             this.matches[i].instructions.push(instr);
         }
-        this.sharedMatches = false;
     }
 }
 
@@ -319,7 +311,8 @@ class PriorityQueue {
             return null;
         }
         const q = this.queues[this.lowestPriority];
-        const result = q.shift();
+        // Within a priority level, we want the _reverse_ order of addition
+        const result = q.pop();
         if (q.length == 0) {
             delete this.queues[this.lowestPriority];
             if (this.highestPriority <= this.lowestPriority) {
@@ -376,10 +369,11 @@ class PlayspecResult {
                 trace: this.config.spec.traceAPI.start(state.trace),
                 // Same here for matches, always added in priority order -- but can use a regular array
                 matchQueue: new PriorityQueue((m:Match) => m.priority),
-                matchSet: new NonReplacingHashMap(matchEquivFn, matchHashFn)
+                matchSet: new NonReplacingHashMap(matchEquivFn, matchHashFn),
+                lastMatchPriority: 0
             };
             let initThread = new Thread(0, 0, 0, [{priority:0, instructions:[]}]);
-            initThread.pushMatchInstruction({type:"start", index:0, target:"$root", priority:0});
+            initThread.pushMatchInstruction({type:"start", index:0, target:"$root"});
             this.enqueueThread(initThread);
             //swap queues
             const temp = this.state.queue;
@@ -430,7 +424,8 @@ class PlayspecResult {
             case "split":
                 this.state.maxThreadID++;
                 thread.pc = instr.left;
-                thread.sharedMatches = true;
+                //match sharing: Be sure thread1 knows thread2 is using its matches.
+                //thread.sharedMatches = true;
                 const thread2 = new Thread(this.state.maxThreadID, instr.right, thread.priority + 1, thread.matches);
                 this.enqueueThread(thread);
                 this.enqueueThread(thread2);
@@ -501,9 +496,13 @@ class PlayspecResult {
             const state = this.config.spec.traceAPI.currentState(this.state.trace);
             let copiedState = undefined;
             const limit = this.state.queue.length;
+            let lastPriority = 0;
             for (let t = 0; t < this.state.queue.length; t++) {
                 if (t >= limit) {
                     throw new Error("The thread queue should never grow during a single trace state!");
+                }
+                if(t.priority < lastPriority) {
+                    throw new Error("Decreasing priority!");
                 }
                 let thread = this.state.queue.get(t);
                 const instr = this.config.spec.program[thread.pc];
@@ -561,6 +560,10 @@ class PlayspecResult {
         if (this.hasReadyMatch()) {
             // Also removes first match from queue!
             const match = this.state.matchQueue.shift();
+            if(this.state.lastMatchPriority > match.priority) {
+                throw new Error("Matches popped out of order!");
+            }
+            this.state.lastMatchPriority = match.priority;
             const prettyMatch = this.prettifyMatch(match);
             const nextState = this.state;
             this.state = undefined;

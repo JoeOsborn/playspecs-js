@@ -637,11 +637,16 @@ var Playspecs =
 	                },
 	                index: 1,
 	                source: "root"
-	            }, { type: "jump", target: 0, index: 2, source: "root" }];
+	            }, { type: "jump", target: 0, index: 2, source: "root" }, { type: "start", group: "$root", index: 3, source: "root" }];
 	            var body = this.compileTree(tree, preface.length);
 	            var result = preface.concat(body).concat([{
-	                type: "match",
+	                type: "end",
+	                group: "$root",
 	                index: preface.length + body.length,
+	                source: "root"
+	            }, {
+	                type: "match",
+	                index: preface.length + body.length + 1,
 	                source: "root"
 	            }]);
 	            if (!this.validate(result)) {
@@ -650,6 +655,7 @@ var Playspecs =
 	            if (!debug) {
 	                for (var i = 0; i < result.length; i++) {
 	                    delete result[i].source;
+	                    delete result[i].index;
 	                }
 	            }
 	            return result;
@@ -704,7 +710,7 @@ var Playspecs =
 	            var result = [];
 	            for (var i = 0; i < code.length; i++) {
 	                var instr = code[i];
-	                var instrStr = instr.index + ":" + instr.type;
+	                var instrStr = i + ":" + instr.type;
 	                switch (instr.type) {
 	                    case "split":
 	                        instrStr += " " + instr.left + " " + instr.right;
@@ -714,6 +720,10 @@ var Playspecs =
 	                        break;
 	                    case "check":
 	                        instrStr += " " + this.stringifyFormula(instr.formula);
+	                        break;
+	                    case "start":
+	                    case "end":
+	                        instrStr += " " + instr.group;
 	                        break;
 	                    case "match":
 	                        break;
@@ -1189,7 +1199,10 @@ var Playspecs =
 	                // This NonReplacingHashMap will have number keys so it can use default hash/equiv
 	                liveSet: new NonReplacingHashMap(null, null),
 	                maxThreadID: 0,
-	                index: 0,
+	                // We start at -1 since the initial actions of the initial thread
+	                // should happen before the trace reaches index 0. This mainly ensures that
+	                // capture groups line up correctly.
+	                index: -1,
 	                pastEnd: false,
 	                trace: this.config.spec.traceAPI.start(state.trace),
 	                // Same here for matches, always added in priority order -- but can use a regular array
@@ -1200,7 +1213,6 @@ var Playspecs =
 	                lastMatchPriority: 0
 	            };
 	            var initThread = new Thread(0, 0, 0, [{ priority: 0, instructions: [] }]);
-	            initThread.pushMatchInstruction({ type: "start", index: 0, target: "$root" });
 	            this.enqueueThread(initThread);
 	            //swap queues
 	            var temp = this.state.queue;
@@ -1209,6 +1221,8 @@ var Playspecs =
 	            //clear live and match sets
 	            this.state.liveSet.clear();
 	            this.state.matchSet.clear();
+	            //move index to start
+	            this.state.index = 0;
 	        }
 	        this.match = match;
 	    }
@@ -1245,12 +1259,29 @@ var Playspecs =
 	                    this.enqueueThread(thread);
 	                    this.enqueueThread(thread2);
 	                    return;
-	                case "match":
+	                case "start":
+	                    thread.pushMatchInstruction({
+	                        type: "start",
+	                        // +1 because the _current_ trace index just matched previously, so we don't want to include it in
+	                        // the match that starts with the _next_ character.
+	                        index: this.state.index + 1,
+	                        target: instr.group
+	                    });
+	                    thread.pc++;
+	                    this.enqueueThread(thread);
+	                    return;
+	                case "end":
 	                    thread.pushMatchInstruction({
 	                        type: "end",
-	                        target: "$root",
-	                        index: this.state.index + 1
+	                        // +1 for same reason as above.
+	                        index: this.state.index + 1,
+	                        target: instr.group
 	                    });
+	                    thread.pc++;
+	                    this.enqueueThread(thread);
+	                    return;
+	                case "match":
+	                    // Add matches to queue
 	                    for (var i = 0; i < thread.matches.length; i++) {
 	                        if (thread.matches[i].priority >= thread.priority) {
 	                            // If it's a novel match...
@@ -1287,7 +1318,7 @@ var Playspecs =
 	                    //not present: add stuck thread to queue.
 	                    this.state.nextQueue.push(thread);
 	                    return;
-	                //todo: case fork, join, joined-left, joined-right, start-group, end-group.
+	                //todo: case fork, join, joined-left, joined-right
 	                // joined-left and joined-right will need to handle merging!
 	                default:
 	                    throw new Error("Unrecognized instruction type ${instr.type}");

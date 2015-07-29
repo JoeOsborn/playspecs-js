@@ -4,10 +4,12 @@ import {parseTypes, isPropositional, BOUND_INFINITE} from "./parser";
 
 type
 Instruction =
-    {type: "check", formula: ParseTree, index: number, source? : "root" | ParseTree} |
-    {type: "jump", target: number, index: number, source? : "root" | ParseTree} |
-    {type: "split", left: number, right: number, index: number, source? : "root" | ParseTree} |
-    {type: "match", index: number, source? : "root" | ParseTree};
+    {type: "check", formula: ParseTree, index? : number, source? : "root" | ParseTree} |
+    {type: "jump", target: number, index? : number, source? : "root" | ParseTree} |
+    {type: "split", left: number, right: number, index? : number, source? : "root" | ParseTree} |
+    {type: "match", index? : number, source? : "root" | ParseTree} |
+    {type: "start", group: string | number, index? : number, source? : "root" | ParseTree} |
+    {type: "end", group: string | number, index? : number, source? : "root" | ParseTree};
 type
 Program = Array < Instruction >;
 
@@ -135,14 +137,23 @@ export default class Compiler {
                 index: 1,
                 source: "root"
             },
-            {type: "jump", target: 0, index: 2, source: "root"}
+            {type: "jump", target: 0, index: 2, source: "root"},
+            {type: "start", group: "$root", index: 3, source: "root"}
         ];
         const body = this.compileTree(tree, preface.length);
-        const result = preface.concat(body).concat([{
-            type: "match",
-            index: preface.length + body.length,
-            source: "root"
-        }]);
+        const result = preface.concat(body).concat([
+            {
+                type: "end",
+                group: "$root",
+                index: preface.length + body.length,
+                source: "root"
+            },
+            {
+                type: "match",
+                index: preface.length + body.length + 1,
+                source: "root"
+            }
+        ]);
         if (!this.validate(result)) {
             throw new Error(
                 "Error compiling tree " + JSON.stringify(tree) + " into result " + JSON.stringify(result)
@@ -151,6 +162,7 @@ export default class Compiler {
         if (!debug) {
             for (let i = 0; i < result.length; i++) {
                 delete result[i].source;
+                delete result[i].index;
             }
         }
         return result;
@@ -199,7 +211,7 @@ export default class Compiler {
         let result = [];
         for (let i = 0; i < code.length; i++) {
             const instr = code[i];
-            let instrStr = `${instr.index}:${instr.type}`;
+            let instrStr = `${i}:${instr.type}`;
             switch (instr.type) {
                 case "split":
                     instrStr += ` ${instr.left} ${instr.right}`;
@@ -209,6 +221,10 @@ export default class Compiler {
                     break;
                 case "check":
                     instrStr += " " + this.stringifyFormula(instr.formula);
+                    break;
+                case "start":
+                case "end":
+                    instrStr += ` ${instr.group}`;
                     break;
                 case "match":
                     break;

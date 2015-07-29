@@ -57,7 +57,7 @@ class Thread {
         this.pc = pc;
         this.priority = priority;
         //match sharing: instead set this.matches to matches and set sharedMatches to true
-        this.matches = matches.map(function(m) {
+        this.matches = matches.map(function (m) {
             let m2 = cloneMatch(m);
             m2.priority = Math.max(priority, m.priority);
             return m2;
@@ -76,16 +76,16 @@ class Thread {
         // Match sharing: if matches are shared, replace matches list with slice of matches list,
         // and insert either clones of other's matches (if other is sharing matches) or other's matches directly
         // Also update priority of new matches
-        for(let i = 0; i < other.matches.length; i++) {
+        for (let i = 0; i < other.matches.length; i++) {
             let found = false;
-            for(let j = 0; j < this.matches.length; j++) {
-                if(matchEquivFn(this.matches[j], other.matches[i])) {
+            for (let j = 0; j < this.matches.length; j++) {
+                if (matchEquivFn(this.matches[j], other.matches[i])) {
                     found = true;
                 }
             }
-            if(!found) {
+            if (!found) {
                 let match = cloneMatch(other.matches[i]);
-                match.priority = Math.max(this.priority,this.matches[i].priority);
+                match.priority = Math.max(this.priority, this.matches[i].priority);
                 this.matches.push(match);
             }
         }
@@ -93,8 +93,8 @@ class Thread {
     }
 
     hasOpenMatch():boolean {
-        for(let i = 0; i < this.matches.length; i++) {
-            if(this.matches[i].instructions.length > 0) {
+        for (let i = 0; i < this.matches.length; i++) {
+            if (this.matches[i].instructions.length > 0) {
                 return true;
             }
         }
@@ -105,7 +105,7 @@ class Thread {
         // Match sharing: if matches are shared, replace matches list with a new list containing clones of matches
         // Also update priority of matches
         // And set sharedMatches to false
-        for(let i = 0; i < this.matches.length; i++) {
+        for (let i = 0; i < this.matches.length; i++) {
             this.matches[i].instructions.push(instr);
         }
     }
@@ -364,7 +364,10 @@ class PlayspecResult {
                 // This NonReplacingHashMap will have number keys so it can use default hash/equiv
                 liveSet: new NonReplacingHashMap(null, null),
                 maxThreadID: 0,
-                index: 0,
+                // We start at -1 since the initial actions of the initial thread
+                // should happen before the trace reaches index 0. This mainly ensures that
+                // capture groups line up correctly.
+                index: -1,
                 pastEnd: false,
                 trace: this.config.spec.traceAPI.start(state.trace),
                 // Same here for matches, always added in priority order -- but can use a regular array
@@ -372,8 +375,7 @@ class PlayspecResult {
                 matchSet: new NonReplacingHashMap(matchEquivFn, matchHashFn),
                 lastMatchPriority: 0
             };
-            let initThread = new Thread(0, 0, 0, [{priority:0, instructions:[]}]);
-            initThread.pushMatchInstruction({type:"start", index:0, target:"$root"});
+            let initThread = new Thread(0, 0, 0, [{priority: 0, instructions: []}]);
             this.enqueueThread(initThread);
             //swap queues
             const temp = this.state.queue;
@@ -382,6 +384,8 @@ class PlayspecResult {
             //clear live and match sets
             this.state.liveSet.clear();
             this.state.matchSet.clear();
+            //move index to start
+            this.state.index = 0;
         }
         this.match = match;
     }
@@ -430,12 +434,29 @@ class PlayspecResult {
                 this.enqueueThread(thread);
                 this.enqueueThread(thread2);
                 return;
-            case "match":
+            case "start":
                 thread.pushMatchInstruction({
-                    type:"end",
-                    target:"$root",
-                    index:this.state.index+1
+                    type: "start",
+                    // +1 because the _current_ trace index just matched previously, so we don't want to include it in
+                    // the match that starts with the _next_ character.
+                    index: this.state.index + 1,
+                    target: instr.group
                 });
+                thread.pc++;
+                this.enqueueThread(thread);
+                return;
+            case "end":
+                thread.pushMatchInstruction({
+                    type: "end",
+                    // +1 for same reason as above.
+                    index: this.state.index + 1,
+                    target: instr.group
+                });
+                thread.pc++;
+                this.enqueueThread(thread);
+                return;
+            case "match":
+                // Add matches to queue
                 for (let i = 0; i < thread.matches.length; i++) {
                     if (thread.matches[i].priority >= thread.priority) {
                         // If it's a novel match...
@@ -472,7 +493,7 @@ class PlayspecResult {
                 //not present: add stuck thread to queue.
                 this.state.nextQueue.push(thread);
                 return;
-            //todo: case fork, join, joined-left, joined-right, start-group, end-group.
+            //todo: case fork, join, joined-left, joined-right
             // joined-left and joined-right will need to handle merging!
             default:
                 throw new Error("Unrecognized instruction type ${instr.type}");
@@ -501,7 +522,7 @@ class PlayspecResult {
                 if (t >= limit) {
                     throw new Error("The thread queue should never grow during a single trace state!");
                 }
-                if(t.priority < lastPriority) {
+                if (t.priority < lastPriority) {
                     throw new Error("Decreasing priority!");
                 }
                 let thread = this.state.queue.get(t);
@@ -516,7 +537,7 @@ class PlayspecResult {
                         );
                         if (checkResult) {
                             thread.pc++;
-                            if(thread.hasOpenMatch) {
+                            if (thread.hasOpenMatch) {
                                 if (this.config.preserveStates) {
                                     if (!copiedState) {
                                         copiedState = this.config.spec.traceAPI.copyCurrentState ?
@@ -524,9 +545,9 @@ class PlayspecResult {
                                             state;
                                     }
                                     thread.pushMatchInstruction({
-                                        type:"state",
-                                        index:this.state.index,
-                                        state:copiedState
+                                        type: "state",
+                                        index: this.state.index,
+                                        state: copiedState
                                     });
                                 }
                             }
@@ -560,7 +581,7 @@ class PlayspecResult {
         if (this.hasReadyMatch()) {
             // Also removes first match from queue!
             const match = this.state.matchQueue.shift();
-            if(this.state.lastMatchPriority > match.priority) {
+            if (this.state.lastMatchPriority > match.priority) {
                 throw new Error("Matches popped out of order!");
             }
             this.state.lastMatchPriority = match.priority;

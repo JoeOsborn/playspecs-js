@@ -26,7 +26,10 @@
     <code class="bytecode">jump Target</code> (where <code class="bytecode">Target</code> is an integer describing the
     unconditional jump destination), <code class="bytecode">split Left Right</code> (where both arguments are integers
     describing program counter values), and <code class="bytecode">match</code> which indicates a thread has
-    successfully matched. The compilation strategy is detailed in the table below.</p>
+    successfully matched. There are also the group capturing commands <code class="bytecode">start</code> and
+    <code class="bytecode">end</code>, but we leave off discussion of those until we extend Playspecs with
+    <a href="interpreter.html#subgroups">subgroup capture</a>. The compilation strategy is detailed in the table below.
+</p>
 
 <table>
     <tr>
@@ -149,12 +152,14 @@
             "0:split 3 1\n" +
             "1:check true\n" +
             "2:jump 0\n" +
-            "3:check start\n" +
-            "4:split 5 7\n" +
-            "5:check not LINK_RELATIONSHIP(,PERSON(Chloe,),RELATIONSHIP(dating,),PERSON(Doug,))\n" +
-            "6:jump 4\n" +
-            "7:check LINK_RELATIONSHIP(,PERSON(Doug,),RELATIONSHIP(embarrassed,),PERSON(Chloe,)) & end\n" +
-            "8:match";
+            "3:start $root\n" +
+            "4:check start\n" +
+            "5:split 6 8\n" +
+            "6:check not LINK_RELATIONSHIP(,PERSON(Chloe,),RELATIONSHIP(dating,),PERSON(Doug,))\n" +
+            "7:jump 5\n" +
+            "8:check LINK_RELATIONSHIP(,PERSON(Doug,),RELATIONSHIP(embarrassed,),PERSON(Chloe,)) & end\n" +
+            "9:end $root\n" +
+            "10:match";
     desc("<p>First, we should compile a simple Playspec. While in practice the <code>Playspecs</code> module is " +
             "the most convenient way to construct Playspecs, here we want to illustrate <code>Compiler</code>'s " +
             "behavior so we use it directly. Its input is a <code>ParseTree</code> from the <code>Parser</code> " +
@@ -173,8 +178,7 @@
             {
                 "type": "split",
                 "left": 3,
-                "right": 1,
-                "index": 0
+                "right": 1
             },
             {
                 "type": "check",
@@ -186,13 +190,15 @@
                         "start": 0,
                         "end": 0
                     }
-                },
-                "index": 1
+                }
             },
             {
                 "type": "jump",
-                "target": 0,
-                "index": 2
+                "target": 0
+            },
+            {
+                "type": "start",
+                "group": "$root"
             },
             {
                 "type": "check",
@@ -204,14 +210,12 @@
                         "start": 0,
                         "end": 5
                     }
-                },
-                "index": 3
+                }
             },
             {
                 "type": "split",
-                "left": 5,
-                "right": 7,
-                "index": 4
+                "left": 6,
+                "right": 8
             },
             {
                 "type": "check",
@@ -260,13 +264,11 @@
                         "start": 7,
                         "end": 29
                     }
-                },
-                "index": 5
+                }
             },
             {
                 "type": "jump",
-                "target": 4,
-                "index": 6
+                "target": 5
             },
             {
                 "type": "check",
@@ -324,12 +326,14 @@
                         "start": 34,
                         "end": 62
                     }
-                },
-                "index": 7
+                }
             },
             {
-                "type": "match",
-                "index": 8
+                "type": "end",
+                "group": "$root"
+            },
+            {
+                "type": "match"
             }
         ]);
         // We can also ask the compiler to stringify the VM code for easier reading.
@@ -338,28 +342,30 @@
     });
     var parser = new Playspecs.Parser.Parser(promWeek);
     var compiler = new Playspecs.Compiler(promWeek);
-    expectedStringProgram = "0:split 3 1  \t\t(root)\n" +
-            "1:check true  \t\t(root)\n" +
-            "2:jump 0  \t\t(root)\n" +
-            "3:check true\t(ch. 0-0)\n" +
-            "4:check true\t(ch. 0-0)\n" +
-            "5:check true\t(ch. 0-0)\n" +
-            "6:split 7 10\t\t(... {\"greedy\":true,\"lowerBound\":3,\"upperBound\":5})\n" +
-            "7:check true\t(ch. 0-0)\n" +
-            "8:split 9 10\t\t(... {\"greedy\":true,\"lowerBound\":3,\"upperBound\":5})\n" +
-            "9:check true\t(ch. 0-0)\n" +
-            "10:split 11 21\t\t(... {\"greedy\":true,\"lowerBound\":0,\"upperBound\":\"$END\"})\n" +
-            "11:split 12 17\t\t(; \";\")\n" +
-            "12:split 16 13\t\t(... {\"greedy\":false,\"lowerBound\":0,\"upperBound\":2})\n" +
-            "13:check false\t(ch. 8-14)\n" +
-            "14:split 16 15\t\t(... {\"greedy\":false,\"lowerBound\":0,\"upperBound\":2})\n" +
-            "15:check false\t(ch. 8-14)\n" +
-            "16:jump 20\t\t(; \";\")\n" +
-            "17:check true\t(ch. 20-24)\n" +
-            "18:check false\t(ch. 26-31)\n" +
-            "19:check true\t(ch. 33-37)\n" +
-            "20:jump 10\t\t(... {\"greedy\":true,\"lowerBound\":0,\"upperBound\":\"$END\"})\n" +
-            "21:match  \t\t(root)";
+    expectedStringProgram = "0:split 3 1  		(root)\n" +
+            "1:check true  		(root)\n" +
+            "2:jump 0  		(root)\n" +
+            "3:start $root  		(root)\n" +
+            "4:check true	(ch. 0-0)\n" +
+            "5:check true	(ch. 0-0)\n" +
+            "6:check true	(ch. 0-0)\n" +
+            "7:split 8 11		(... {\"greedy\":true,\"lowerBound\":3,\"upperBound\":5})\n" +
+            "8:check true	(ch. 0-0)\n" +
+            "9:split 10 11		(... {\"greedy\":true,\"lowerBound\":3,\"upperBound\":5})\n" +
+            "10:check true	(ch. 0-0)\n" +
+            "11:split 12 22		(... {\"greedy\":true,\"lowerBound\":0,\"upperBound\":\"$END\"})\n" +
+            "12:split 13 18		(; \";\")\n" +
+            "13:split 17 14		(... {\"greedy\":false,\"lowerBound\":0,\"upperBound\":2})\n" +
+            "14:check false	(ch. 8-14)\n" +
+            "15:split 17 16		(... {\"greedy\":false,\"lowerBound\":0,\"upperBound\":2})\n" +
+            "16:check false	(ch. 8-14)\n" +
+            "17:jump 21		(; \";\")\n" +
+            "18:check true	(ch. 20-24)\n" +
+            "19:check false	(ch. 26-31)\n" +
+            "20:check true	(ch. 33-37)\n" +
+            "21:jump 11		(... {\"greedy\":true,\"lowerBound\":0,\"upperBound\":\"$END\"})\n" +
+            "22:end $root  		(root)\n" +
+            "23:match  		(root)";
     desc("<p>The gadgets all work as defined in the table above. For complicated programs, it may help understanding " +
             "to pass the <code>debug=true</code> flag to <code>compile()</code>, which maintains per-instruction " +
             "source information. <code>stringify</code> will annotate lines with such information. Control flow " +

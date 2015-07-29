@@ -152,6 +152,8 @@
         // Matches can also occur in the middle of a trace.
         var spec2 = new Playspecs.Playspec("b", lettersContext);
         var threeMatches = spec2.match("ababab");
+        // Getting accurate start indexes actually relies on a submatch capture facility.
+        // We explain and generalize it later in this document.
         ex(threeMatches.start, 1);
         ex(threeMatches.end, 2);
         threeMatches = threeMatches.next();
@@ -211,8 +213,8 @@
     <code>PlayspecResult</code> objects.</p>
 
 <p>We do want to prevent duplicate matches, so within a single advance of the trace we track which matches have been
-    seen and only enqueue the first one. Matches which cover different ranges of the trace by definition will not be
-    equivalent, so we don't need to track all matches found by the Playspec&mdash;just the ones found this time
+    seen and only enqueue the first one. Matches which cover different ranges of the overall trace by definition will
+    not be equivalent, so we don't need to track all matches found by the Playspec&mdash;just the ones found this time
     around.</p>
 
 <div class="footnotes">
@@ -243,7 +245,13 @@
     may seem a little strange at first&mdash;but they seem to be necessary for efficiently combining both intersection
     and subgroup matching.</p>
 
-<h3>Subgroup Matching</h3>
+<h3 id="subgroups">Subgroup Matching</h3>
+
+where start indices come from
+
+start/end instructions
+
+more on matches as instruction sequences, extending them, merging them
 
 <h3>Intersection</h3>
 

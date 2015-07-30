@@ -109,6 +109,11 @@ class Thread {
             this.matches[i].instructions.push(instr);
         }
     }
+
+    terminate() {
+        // Let matches, and thus kept states, be garbage collected
+        this.matches = null;
+    }
 }
 
 class NonReplacingHashMap {
@@ -212,7 +217,8 @@ function hashNumbers(...numbers:Array<Number>):number {
 }
 
 type
-MatchInstruction = {type: "start" | "end" | "state", target: string | number, index: number, state? : any};
+MatchInstruction = {type: "start" | "end", target: string | number, index: number} |
+    {type: "state", index: number, state: any};
 type
 Match = {priority: number, instructions: Array < MatchInstruction >};
 
@@ -399,10 +405,7 @@ class PlayspecResult {
     }
 
     get states() {
-        if (this.config.preserveStates) {
-            return this.match ? this.match.states : undefined;
-        }
-        return undefined;
+        return this.match ? this.match.states : undefined;
     }
 
     hasReadyMatch():boolean {
@@ -467,6 +470,7 @@ class PlayspecResult {
                     }
                 }
                 //drop thread, its work is done
+                thread.terminate();
                 return;
             case "check":
                 // check live set, then add to queue
@@ -486,6 +490,7 @@ class PlayspecResult {
                         if (live.threads.get(i).equals(thread)) {
                             live.threads.get(i).mergeThread(thread);
                             // Drop the merged-in thread, no more work to do
+                            thread.terminate();
                             return;
                         }
                     }
@@ -501,12 +506,46 @@ class PlayspecResult {
     }
 
     prettifyMatch(m:Match) {
-        //todo:proper prettification, get states out, stacked groups, etc
-        return {
-            start: m.instructions[0].index,
-            end: m.instructions[m.instructions.length - 1].index,
-            states: m.instructions.filter((i) => i.type == "state").map((i) => i.state)
+        let groups = [];
+        let liveGroups = {};
+        for (let i = 0; i < m.instructions.length; i++) {
+            const instr = m.instructions[i];
+            switch (instr.type) {
+                case "start":
+                    let newG = {group: instr.target, start: instr.index, end: Infinity};
+                    if (this.config.preserveStates) {
+                        newG.states = [];
+                    }
+                    groups.push(newG);
+                    if (liveGroups[newG.group]) {
+                        throw new Error("Duplicate capture group");
+                    }
+                    liveGroups[newG.group] = newG;
+                    break;
+                case "state":
+                    let openGroups = Object.getOwnPropertyNames(liveGroups);
+                    for (let gi = 0; gi < openGroups.length; gi++) {
+                        let continuedG = liveGroups[openGroups[gi]];
+                        continuedG.states.push(instr.state);
+                    }
+                    break;
+                case "end":
+                    let finishedG = liveGroups[instr.target];
+                    finishedG.end = instr.index;
+                    delete liveGroups[instr.target];
+                    break;
+            }
         }
+        let openGroups = Object.getOwnPropertyNames(liveGroups);
+        if (openGroups.length) {
+            throw new Error(`Open capture groups: ${openGroups.join(",")}`);
+        }
+        let rootGroup = groups.shift();
+        let rootMatch = {start:rootGroup.start, end:rootGroup.end, subgroups:groups};
+        if(this.config.preserveStates) {
+            rootMatch.states = rootGroup.states;
+        }
+        return rootMatch;
     }
 
     next():PlayspecResult {
@@ -552,7 +591,9 @@ class PlayspecResult {
                                 }
                             }
                             this.enqueueThread(thread);
-                        } //otherwise drop the thread on the floor
+                        } else { //otherwise drop the thread on the floor
+                            thread.terminate();
+                        }
                         break;
                     default:
                         throw new Error("Thread should be parked on a check.");

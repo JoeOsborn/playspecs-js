@@ -903,6 +903,12 @@ var Playspecs =
 	                this.matches[i].instructions.push(instr);
 	            }
 	        }
+	    }, {
+	        key: "terminate",
+	        value: function terminate() {
+	            // Let matches, and thus kept states, be garbage collected
+	            this.matches = null;
+	        }
 	    }]);
 	
 	    return Thread;
@@ -1292,6 +1298,7 @@ var Playspecs =
 	                        }
 	                    }
 	                    //drop thread, its work is done
+	                    thread.terminate();
 	                    return;
 	                case "check":
 	                    // check live set, then add to queue
@@ -1311,6 +1318,7 @@ var Playspecs =
 	                            if (live.threads.get(i).equals(thread)) {
 	                                live.threads.get(i).mergeThread(thread);
 	                                // Drop the merged-in thread, no more work to do
+	                                thread.terminate();
 	                                return;
 	                            }
 	                        }
@@ -1327,16 +1335,46 @@ var Playspecs =
 	    }, {
 	        key: "prettifyMatch",
 	        value: function prettifyMatch(m) {
-	            //todo:proper prettification, get states out, stacked groups, etc
-	            return {
-	                start: m.instructions[0].index,
-	                end: m.instructions[m.instructions.length - 1].index,
-	                states: m.instructions.filter(function (i) {
-	                    return i.type == "state";
-	                }).map(function (i) {
-	                    return i.state;
-	                })
-	            };
+	            var groups = [];
+	            var liveGroups = {};
+	            for (var i = 0; i < m.instructions.length; i++) {
+	                var instr = m.instructions[i];
+	                switch (instr.type) {
+	                    case "start":
+	                        var newG = { group: instr.target, start: instr.index, end: Infinity };
+	                        if (this.config.preserveStates) {
+	                            newG.states = [];
+	                        }
+	                        groups.push(newG);
+	                        if (liveGroups[newG.group]) {
+	                            throw new Error("Duplicate capture group");
+	                        }
+	                        liveGroups[newG.group] = newG;
+	                        break;
+	                    case "state":
+	                        var openGroups = Object.getOwnPropertyNames(liveGroups);
+	                        for (var gi = 0; gi < openGroups.length; gi++) {
+	                            var continuedG = liveGroups[openGroups[gi]];
+	                            continuedG.states.push(instr.state);
+	                        }
+	                        break;
+	                    case "end":
+	                        var finishedG = liveGroups[instr.target];
+	                        finishedG.end = instr.index;
+	                        delete liveGroups[instr.target];
+	                        break;
+	                }
+	            }
+	            var openGroups = Object.getOwnPropertyNames(liveGroups);
+	            if (openGroups.length) {
+	                throw new Error("Open capture groups: " + openGroups.join(","));
+	            }
+	            var rootGroup = groups.shift();
+	            var rootMatch = { start: rootGroup.start, end: rootGroup.end, subgroups: groups };
+	            if (this.config.preserveStates) {
+	                rootMatch.states = rootGroup.states;
+	            }
+	            return rootMatch;
 	        }
 	    }, {
 	        key: "next",
@@ -1376,7 +1414,10 @@ var Playspecs =
 	                                    }
 	                                }
 	                                this.enqueueThread(thread);
-	                            } //otherwise drop the thread on the floor
+	                            } else {
+	                                //otherwise drop the thread on the floor
+	                                thread.terminate();
+	                            }
 	                            break;
 	                        default:
 	                            throw new Error("Thread should be parked on a check.");
@@ -1430,10 +1471,7 @@ var Playspecs =
 	    }, {
 	        key: "states",
 	        get: function get() {
-	            if (this.config.preserveStates) {
-	                return this.match ? this.match.states : undefined;
-	            }
-	            return undefined;
+	            return this.match ? this.match.states : undefined;
 	        }
 	    }]);
 	

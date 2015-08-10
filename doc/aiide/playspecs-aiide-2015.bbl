@@ -1,0 +1,277 @@
+\begin{thebibliography}{}
+
+\bibitem[\protect\citeauthoryear{Albin}{2003}]{albin2004property}
+Albin, K. e.~a.
+\newblock 2003.
+\newblock Property specification language reference manual.
+
+\bibitem[\protect\citeauthoryear{Andersen, Gulwani, and
+  Popovic}{2013}]{andersen2013trace}
+Andersen, E.; Gulwani, S.; and Popovic, Z.
+\newblock 2013.
+\newblock A trace-based framework for analyzing and synthesizing educational
+  progressions.
+\newblock In {\em Proceedings of the SIGCHI Conference on Human Factors in
+  Computing Systems},  773--782.
+\newblock ACM.
+
+\bibitem[\protect\citeauthoryear{Arts \bgroup et al\mbox.\egroup
+  }{2006}]{Arts:2006:TTS:1159789.1159792}
+Arts, T.; Hughes, J.; Johansson, J.; and Wiger, U.
+\newblock 2006.
+\newblock Testing telecoms software with quviq quickcheck.
+\newblock In {\em Proceedings of the 2006 ACM SIGPLAN Workshop on Erlang},
+  ERLANG '06,  2--10.
+\newblock New York, NY, USA: ACM.
+
+\bibitem[\protect\citeauthoryear{Baier and McIlraith}{2006}]{baier2006planning}
+Baier, J.~A., and McIlraith, S.~A.
+\newblock 2006.
+\newblock Planning with first-order temporally extended goals using heuristic
+  search.
+\newblock In {\em Proceedings of the National Conference on Artificial
+  Intelligence}, volume~21,  788.
+\newblock Menlo Park, CA; Cambridge, MA; London; AAAI Press; MIT Press; 1999.
+
+\bibitem[\protect\citeauthoryear{Baier}{1998}]{baier1998algorithmic}
+Baier, C.
+\newblock 1998.
+\newblock On algorithmic verification methods for probabilistic systems.
+\newblock {\em Universit{\"a}t Mannheim}.
+
+\bibitem[\protect\citeauthoryear{Barnat \bgroup et al\mbox.\egroup
+  }{2013}]{barnat2013divine}
+Barnat, J.; Brim, L.; Havel, V.; Havl{\'\i}{\v{c}}ek, J.; Kriho, J.;
+  Len{\v{c}}o, M.; Ro{\v{c}}kai, P.; {\v{S}}till, V.; and Weiser, J.
+\newblock 2013.
+\newblock Divine 3.0--an explicit-state model checker for multithreaded c \&
+  c++ programs.
+\newblock In {\em Computer Aided Verification},  863--868.
+\newblock Springer.
+
+\bibitem[\protect\citeauthoryear{Butler \bgroup et al\mbox.\egroup
+  }{2013}]{butler2013mixed}
+Butler, E.; Smith, A.~M.; Liu, Y.-E.; and Popovic, Z.
+\newblock 2013.
+\newblock A mixed-initiative tool for designing level progressions in games.
+\newblock In {\em Proceedings of the 26th annual ACM symposium on User
+  interface software and technology},  377--386.
+\newblock ACM.
+
+\bibitem[\protect\citeauthoryear{Cimatti \bgroup et al\mbox.\egroup
+  }{2000}]{cimatti2000nusmv}
+Cimatti, A.; Clarke, E.; Giunchiglia, F.; and Roveri, M.
+\newblock 2000.
+\newblock Nusmv: a new symbolic model checker.
+\newblock {\em International Journal on Software Tools for Technology Transfer}
+  2(4):410--425.
+
+\bibitem[\protect\citeauthoryear{Courcoubetis \bgroup et al\mbox.\egroup
+  }{1993}]{courcoubetis1993memory}
+Courcoubetis, C.; Vardi, M.; Wolper, P.; and Yannakakis, M.
+\newblock 1993.
+\newblock Memory-efficient algorithms for the verification of temporal
+  properties.
+\newblock In {\em Computer-aided Verification},  129--142.
+\newblock Springer.
+
+\bibitem[\protect\citeauthoryear{Cox}{2011}]{cox2011implementing}
+Cox, R.
+\newblock 2011.
+\newblock Implementing regular expressions.
+\newblock https://swtch.com/~rsc/regexp/.
+
+\bibitem[\protect\citeauthoryear{Dormans}{2009}]{dormans2009machinations}
+Dormans, J.
+\newblock 2009.
+\newblock Machinations: Elemental feedback structures for game design.
+\newblock In {\em Proceedings of the GAMEON-NA Conference},  33--40.
+
+\bibitem[\protect\citeauthoryear{Du~Bois}{2009}]{duboisTesting}
+Du~Bois, P.
+\newblock 2009.
+\newblock Robotic testing to the rescue.
+\newblock In {\em Game Developers Conference}.
+
+\bibitem[\protect\citeauthoryear{Duret-Lutz and
+  Poitrenaud}{2004}]{duret2004spot}
+Duret-Lutz, A., and Poitrenaud, D.
+\newblock 2004.
+\newblock Spot: an extensible model checking library using transition-based
+  generalized b{\"u}chi automata.
+\newblock In {\em Proceedings of the IEEE Computer Society's 12th International
+  Symposium on Modeling, Analysis, and Simulation of Computer and
+  Telecommunications Systems},  76--83.
+\newblock IEEE.
+
+\bibitem[\protect\citeauthoryear{El-Nasr, Drachen, and
+  Canossa}{2013}]{el2013game}
+El-Nasr, M.~S.; Drachen, A.; and Canossa, A.
+\newblock 2013.
+\newblock {\em Game analytics: Maximizing the value of player data}.
+\newblock Springer Science \& Business Media.
+
+\bibitem[\protect\citeauthoryear{Holzmann}{1993}]{holzmann1993design}
+Holzmann, G.~J.
+\newblock 1993.
+\newblock Design and validation of protocols: a tutorial.
+\newblock {\em Computer Networks and ISDN Systems} 25(9):981--1017.
+
+\bibitem[\protect\citeauthoryear{Holzmann}{1997}]{holzmann1997model}
+Holzmann, G.~J.
+\newblock 1997.
+\newblock The model checker spin.
+\newblock {\em IEEE Transactions on software engineering} 23(5):279--295.
+
+\bibitem[\protect\citeauthoryear{Hughes, Norell, and
+  Sautret}{2010}]{hughes2010using}
+Hughes, J.; Norell, U.; and Sautret, J.
+\newblock 2010.
+\newblock Using temporal relations to specify and test an instant messaging
+  server.
+\newblock In {\em Proceedings of the 5th Workshop on Automation of Software
+  Testing},  95--102.
+\newblock ACM.
+
+\bibitem[\protect\citeauthoryear{Hunicke, LeBlanc, and
+  Zubek}{2004}]{hunicke2004mda}
+Hunicke, R.; LeBlanc, M.; and Zubek, R.
+\newblock 2004.
+\newblock Mda: A formal approach to game design and game research.
+\newblock In {\em Proceedings of the AAAI Workshop on Challenges in Game AI},
+  volume~4.
+
+\bibitem[\protect\citeauthoryear{Koymans}{1990}]{koymans1990specifying}
+Koymans, R.
+\newblock 1990.
+\newblock Specifying real-time properties with metric temporal logic.
+\newblock {\em Real-time systems} 2(4):255--299.
+
+\bibitem[\protect\citeauthoryear{Kr{\"o}ger and Merz}{2008}]{kroger2008first}
+Kr{\"o}ger, F., and Merz, S.
+\newblock 2008.
+\newblock First-order linear temporal logic.
+\newblock In {\em Temporal Logic and State Systems}. Springer.
+\newblock  153--179.
+
+\bibitem[\protect\citeauthoryear{Lavelle}{2013}]{puzzlescript}
+Lavelle, S.
+\newblock 2013.
+\newblock Puzzlescript.
+\newblock http://puzzlescript.net.
+
+\bibitem[\protect\citeauthoryear{Lim and Harrell}{2014}]{lim2014approach}
+Lim, C.-U., and Harrell, D.~F.
+\newblock 2014.
+\newblock An approach to general videogame evaluation and automatic generation
+  using a description language.
+\newblock In {\em Proceedings of the 2014 IEEE Conference on Computational
+  Intelligence and Games},  1--8.
+\newblock IEEE.
+
+\bibitem[\protect\citeauthoryear{Liu \bgroup et al\mbox.\egroup
+  }{2011}]{liu2011feature}
+Liu, Y.-E.; Andersen, E.; Snider, R.; Cooper, S.; and Popovi{\'c}, Z.
+\newblock 2011.
+\newblock Feature-based projections for effective playtrace analysis.
+\newblock In {\em Proceedings of the Sixth International Conference on the
+  Foundations of Digital Games},  69--76.
+\newblock ACM.
+
+\bibitem[\protect\citeauthoryear{Mateas and
+  Wardrip-Fruin}{2009}]{mateas2009defining}
+Mateas, M., and Wardrip-Fruin, N.
+\newblock 2009.
+\newblock Defining operational logics.
+\newblock {\em Digital Games Research Association (DiGRA)}.
+
+\bibitem[\protect\citeauthoryear{McCoy \bgroup et al\mbox.\egroup
+  }{2011}]{mccoy2011prom}
+McCoy, J.; Treanor, M.; Samuel, B.; Mateas, M.; and Wardrip-Fruin, N.
+\newblock 2011.
+\newblock Prom week: social physics as gameplay.
+\newblock In {\em Proceedings of the Sixth International Conference on the
+  Foundations of Digital Games},  319--321.
+\newblock ACM.
+
+\bibitem[\protect\citeauthoryear{McCoy \bgroup et al\mbox.\egroup
+  }{2014}]{mccoy2014social}
+McCoy, J.; Treanor, M.; Samuel, B.; Reed, A.; Mateas, M.; and Wardrip-Fruin, N.
+\newblock 2014.
+\newblock Social story worlds with comme il faut.
+\newblock {\em IEEE Transactions on Computational Intelligence and AI in Games
+  PP (99)}  1--1.
+
+\bibitem[\protect\citeauthoryear{Nelson}{2006}]{nelson2006natural}
+Nelson, G.
+\newblock 2006.
+\newblock Natural language, semantic analysis, and interactive fiction.
+\newblock {\em IF Theory Reader}  141.
+
+\bibitem[\protect\citeauthoryear{Osborn and Mateas}{2014}]{osborn2014game}
+Osborn, J.~C., and Mateas, M.
+\newblock 2014.
+\newblock A game-independent play trace dissimilarity metric.
+\newblock {\em Proceedings of the Ninth International Conference on the
+  Foundations of Digital Games}.
+
+\bibitem[\protect\citeauthoryear{Osborn \bgroup et al\mbox.\egroup
+  }{2015}]{osborn2015combat}
+Osborn, J.~C.; Lederle-Ensign, D.; Wardrip-Fruin, N.; and Mateas, M.
+\newblock 2015.
+\newblock Combat in games.
+\newblock In {\em Proceedings of the Tenth International Conference on the
+  Foundations of Digital Games}.
+
+\bibitem[\protect\citeauthoryear{Provinciano}{2015}]{provincianoTesting}
+Provinciano, B.
+\newblock 2015.
+\newblock Automated testing and instant replays in retro city rampage.
+\newblock In {\em Game Developers Conference}.
+
+\bibitem[\protect\citeauthoryear{Shaker, Shaker, and
+  Togelius}{2013}]{shaker2013evolving}
+Shaker, N.; Shaker, M.; and Togelius, J.
+\newblock 2013.
+\newblock Evolving playable content for cut the rope through a simulation-based
+  approach.
+\newblock In {\em Proceedings of the Ninth AAAI Conference on Artificial
+  Intelligence and Interactive Digital Entertainment}.
+
+\bibitem[\protect\citeauthoryear{Smith and Mateas}{2011}]{smith2011towards}
+Smith, A.~M., and Mateas, M.
+\newblock 2011.
+\newblock Towards knowledge-oriented creativity support in game design.
+\newblock In {\em Proceedings of the 2nd International Conference on
+  Computational Creativity}.
+
+\bibitem[\protect\citeauthoryear{Smith, Butler, and
+  Popovic}{2013}]{smith2013quantifying}
+Smith, A.~M.; Butler, E.; and Popovic, Z.
+\newblock 2013.
+\newblock Quantifying over play: Constraining undesirable solutions in puzzle
+  design.
+\newblock In {\em Proceedings of the Eighth International Conference on the
+  Foundations of Digital Games},  221--228.
+
+\bibitem[\protect\citeauthoryear{Smith, Nelson, and
+  Mateas}{2009}]{smith2009computational}
+Smith, A.~M.; Nelson, M.~J.; and Mateas, M.
+\newblock 2009.
+\newblock Computational support for play testing game sketches.
+\newblock In {\em AAAI Conference on Artificial Intelligence and Interactive
+  Digital Entertainment}.
+
+\bibitem[\protect\citeauthoryear{Thompson}{1968}]{Thompson:1968:PTR:363347.363387}
+Thompson, K.
+\newblock 1968.
+\newblock Programming techniques: Regular expression search algorithm.
+\newblock {\em Commun. ACM} 11(6):419--422.
+
+\bibitem[\protect\citeauthoryear{Van~der Linden}{2013}]{van2013designing}
+Van~der Linden, R.
+\newblock 2013.
+\newblock {\em Designing procedurally generated levels}.
+\newblock Ph.D. Dissertation, TU Delft, Delft University of Technology.
+
+\end{thebibliography}

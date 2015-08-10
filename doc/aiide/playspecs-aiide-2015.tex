@@ -1,0 +1,402 @@
+\documentclass[letterpaper]{article}
+% Required Packages
+\usepackage{aaai}
+\usepackage{times}
+\usepackage{helvet}
+\usepackage{courier}
+\usepackage{microtype}
+\usepackage{url}
+\setlength{\pdfpagewidth}{8.5in}
+\setlength{\pdfpageheight}{11in}
+\frenchspacing
+%%%%%%%%%%
+% PDFINFO for PDFLATEX
+% Uncomment and complete the following for metadata (your paper must compile with PDFLATEX)
+\pdfinfo{
+/Title (Playspecs: Regular Expressions for Game Play Traces)
+/Author (Joseph C. Osborn, Ben Samuel, Michael Mateas, Noah Wardrip-Fruin)
+/Keywords (formal modeling, verification, automated testing, automata theory, regular expressions, analytics, telemetry, game dynamics, temporal logic)
+}
+%%%%%%%%%%
+% Section Numbers
+% Uncomment if you want to use section numbers % and change the 0 to a 1 or 2
+\setcounter{secnumdepth}{1} %%%%%%%%%%
+
+\newcommand{\syntax}[1]{\texttt{\detokenize{#1}}}
+
+% Title, Author, and Address Information
+\title{Playspecs: Regular Expressions for Game Play Traces}
+\author{Joseph C. Osborn \and Ben Samuel \and Michael Mateas \and Noah Wardrip-Fruin\\
+Expressive Intelligence Studio\\
+University of California, Santa Cruz
+}
+%%%%%%%%%%
+% Body of Paper Begins
+\begin{document}
+\maketitle
+\begin{abstract}
+\begin{quote}
+
+We introduce Playspecs, an application of $\omega$-regular expressions to specifying play traces (sequences of game states or events unfolding over time). This connects the automated analysis and model checking of games to the literature on formal software verification via B\"{u}chi automata. We show how to define desirable or undesirable sequences of game events with Playspecs and how associated algorithms can find examples (or prove the impossibility) of such sequences. Playspecs have two main benefits over existing techniques for specifying the behaviors of a game over time. First, they offer a scalable commitment to formal modeling: the same Playspecs can filter existing traces gathered by telemetry, search for satisfying traces using existing game code, or drive formal verification when paired with a logical model of a game. Second, Playspecs' syntax can be customized for the game engine or game in question so designers may write specifications using their game's native vocabulary. We define Playspecs' syntax and semantics (modulo game-specific customizations) and outline algorithms for each of the applications mentioned above, providing examples from the social simulation game \emph{Prom Week} and the puzzle game engine \emph{PuzzleScript}.
+
+\end{quote}
+\end{abstract}
+
+\section{Introduction}
+\label{sec:introduction}
+
+\noindent Game design produces complex emergent behaviors. Unfortunately, some of those behaviors may be undesirable, and some desirable behaviors may be absent: the design may not match the designer's intent. Furthermore, game \emph{programs} do not always faithfully implement game \emph{designs}. Techniques from the formal software verification community could help resolve both of these problems, but game designs are not always explicitly specified; even when specifications are explicit, they tend to be informal.
+
+Informal or missing specifications require frequent playtesting and human interpretation to determine desirable or undesirable behaviors. Formal game modeling approaches like BIPED~\cite{smith2009computational} automate some of this design verification, but often require a comprehensive logical model of the game design to operate. This can be challenging for game designers and programmers unfamiliar with formal logic. Even familiar tools like unit or functional tests have limited utility for checking the correctness of game programs: gameplay situations are complex to configure and correctness criteria often involve the evolution of game state over time. Automated testing of complex game functionality seems relatively uncommon in the game industry, as presentations at its flagship conference still advocate for it~\cite{duboisTesting,provincianoTesting}.
+%,guo2012game | tremblay2013exploration
+Looking only at the behavior of games (rather than their code), most game play trace analysis uses aggregated metrics like event counts to collapse sequences of game states into sets of numbers~\cite{el2013game}. Some work has also been done in searching for traces which contain certain events, in some cases only when prior to other events. Trace visualization and gestalt approaches~\cite{liu2011feature,osborn2014game} are more prevalent than targeted queries; this may be because writing targeted queries is difficult, often combining multiple database lookups with code in a general-purpose programming language. We contrast our work with other solutions to these problems in Sec.~\ref{sec:relatedwork}.
+
+We propose \emph{Playspecs}, a formalism that cleans up and regularizes all of these trace analysis activities. We provide one play trace specification language (tailored for efficiently searching through play traces) that can be reused across different games. This language also scales up from trace filtering through to rigorous formal verification, permitting the use of the software engineering community's verification tools.
+
+The input to these Playspecs can be witnessed play traces gathered from telemetry (or random play, or solution search) or a logical model of a game. Playspecs can be adopted at the level of the game engine or the individual game, and with a little developer effort they can be relatively natural for designers to author directly.
+%,Holzer:2010:DYS:1858996.1859084
+Formally, Playspecs are $\omega$-regular expressions over program states (instead of characters in a string); 
+$\omega$-regexes are a well-understood language for specifying the behavior of computational systems~\cite{albin2004property}. In introducing Playspecs, we contribute: an application of proven techniques from formal verification to game design; a specification tool with a scalable degree of formality; and an emphasis on the use of game- and game-engine-specific concepts and syntax when specifying a game design.
+
+We have applied a subset of the Playspec language to \emph{PuzzleScript}~\cite{puzzlescript}, a game engine for designing puzzle games, to verify that level solutions are \emph{valid} with respect to a designer's intent. Source code is available on GitHub in the \verb|js/analyzer/| directory of \url{https://github.com/joeosborn/puzzlescript/tree/analyzer} (though this implements an earlier draft of Playspecs). Given their promise in this relatively general application, we have also begun applying Playspecs to the analysis of play traces from the simulation game \emph{Prom Week}~\cite{mccoy2011prom}. We provide a relatively complete, efficient, and documented reference implementation at \url{https://github.com/joeosborn/playspecs-js}.
+
+This paper proceeds as follows. First, we motivate the use of Playspecs with \emph{PuzzleScript} and \emph{Prom Week} examples. We then formally define the syntax and semantics of Playspecs for an audience that may be unfamiliar with existing work in program verification. Next, we outline how to apply Playspecs to existing games and game engines. Finally, we compare Playspecs with earlier approaches to the formal specification and verification of game designs.
+
+\section{Motivating Examples}
+\label{sec:motivations}
+
+\noindent \emph{PuzzleScript} has already received some attention from the game AI community~\cite{lim2014approach}. It offers a semi-declarative syntax for defining 2D puzzle games in terms of \emph{1-dimensional rewrite rules} which each match a slice of the current game \emph{level} (a 2D grid of \emph{objects}, where multiple objects may reside at the same position) and modify that slice according to a fixed pattern. For example, to detect a player object moving towards an adjacent box object (in any direction), one writes \syntax{[> Player | Box]}; to cause the box to move under this circumstance, the complete \emph{rule} is \syntax{[> Player | Box] -> [> Player | > Box]} (note the \syntax{>} arrow which is added to the box on the right hand side). Levels are written out as 2D grids of ASCII characters whose meanings are assigned by a \emph{legend}. Each level is won when the game's \emph{win conditions}, e.g.\ \syntax{all Box on Target}, are met.
+
+In puzzle games, it is important to gradually present the game's concepts to the player, building up to more complex problems. If a player can complete a stage without learning a necessary concept (for example due to an oversight in the level design) they may be unprepared for future levels. The designers of the math puzzle game \emph{Refraction} invented means to detect and prevent these kinds of design bugs~\cite{smith2013quantifying}, but applying their techniques to new games requires working largely from scratch.
+
+We have extended \emph{PuzzleScript} with an automated solver based on heuristic search and with support for Playspecs: any \emph{PuzzleScript} game can define Playspecs that must hold for found solutions of each level. Solutions which violate those specifications are presented to the designer. In this way, we build confidence that levels have no shortcuts and require the player to have learned certain concepts. We simplify writing Playspecs by supporting a subset of \emph{PuzzleScript}'s native syntax in the specification language. A specification can demand that a 1D pattern or 2D level fragment matches the current game state or that a win-condition-like predicate holds. These forms exactly mirror the \emph{PuzzleScript} syntax.
+
+Some solution checks expressible in Playspecs include "the red, green, and blue switches must be flipped in that order"; "the player must remove a box which starts on a goal position, replacing it later"; and "this level requires at least 20 moves, moving two particular boxes at least once each."
+
+\emph{Prom Week} is a social simulation puzzle game (driven by the AI system \emph{Comme il Faut}~\cite{mccoy2014social}) populated by characters who have ever-shifting \emph{relationships} and \emph{attitudes} towards each other. Players change the \emph{social state} by having characters engage in \emph{social exchanges} with each other, such as \emph{Ask Out} or \emph{Backstab}. Each level of \emph{Prom Week} asks the player to solve different social puzzles such as wooing a date or giving a bully their just desserts within a limited number of turns. The exchanges available on a given turn are determined by over 5,000 \emph{influence rules} which reason over all aspects of the social state, including relationships (friends, dating, enemies), network values (buddy, romance, cool), and other factors. This rich dynamism comes at the cost of predictability: though adding additional rules is important for making characters believable, it is difficult for the designers to anticipate how any given rule affects the rest of the system. 
+
+There are three main applications of Playspecs to \emph{Prom Week}: finding traces with interesting or surprising behavior or strategies; verifying that level-specific goals can still be met when influence rules are changed or added; and identifying traces as \emph{unbelievable} if characters perform unrealistic actions like repeatedly breaking up and starting to date again on successive turns. Playspecs can reason over the same social facts as the influence rules do with a custom syntax resembling labeled edges. For example, \syntax{Doug-friends-Jordan} checks whether Doug and Jordan have the \syntax{friends} relationship, and \syntax{Doug-romance<0.3-Chloe} succeeds if the value of Doug's romance network for Chloe is less than $0.3$.
+
+% * <jcosborn@soe.ucsc.edu> 2015-05-31T03:05:19.444Z:
+%
+%  Ben: I dropped this (really interesting) application in the interest of space, since it seemed similar to the drama management application we mention in the conclusion. Sounds like a great idea for a subsequent paper!
+%
+
+%All of these applications help ensure that the actual game design is in line with author's intent, and can reveal otherwise hard to discover insights about player behavior. But Playspecs can be employed to help drive game engine decisions as well. In \emph{Prom Week}, there aren't any systems in place to recognize the 'type' of story that is being told; characters determine their actions based on the social state--so characters are always behaving believably (more or less)--but there's nothing guaranteeing that the story being produced is dramatically interesting. Playspecs could be applied as a recognizer to see if the actions and states generated thus far in a play through of the game adhere to any number of story archetypes and, if so, could influence the game engine to try to make the rest of the archetype more likely to pan out. 
+
+%An example of a "sad" Prom Week story, easily implementable in Playspecs, might be that two characters that start off with opposite feelings of romance towards each other (i.e., a situation of unrequited love) gradually exchange their opinions of each other (i.e., the scorned turns into the recipient of the other's affections, though they are now no longer interested). This might be captured as a Playspec as:
+
+%\syntax{Doug-romance<0.3-Chloe & Chloe-romance>0.7-Doug, ..., Doug-romance>0.7-Chloe & Chloe-romance<0.3-Doug}
+
+%That is, Doug begins by not being interested in Chloe, who is infatuated with him, but by the end their feelings have reversed. If connected to the engine, when the system catches wind of Doug and Chloe having this starting relationship, it could affect the existing influence rules--or create new ones--that would encourage Doug and Chloe to take actions which would lead to them both having lukewarm feelings for each other, until eventually Doug is interested in Chloe who no longer cares about him.
+
+%In short, Playspecs could be a means of augmenting \emph{Prom Week's} dynamic character-centric social simulation with the satisfaction that comes from well structured stories. Note that this is not currently implemented, but is an exciting potential application of Playspecs for future work.
+
+
+\begin{figure}
+\small
+\centering
+\begin{tabular}{l | l | p{1.8in}}
+Playspec & $\omega$-Regex & Explanation \\ 
+\syntax{p} & \syntax{p} & The fact \syntax{p} holds in the current state\\
+\syntax{P&Q} &  & \syntax{P} and \syntax{Q} both hold in current state\\
+\syntax{P|Q} & \syntax{[pq]} & Either \syntax{P} or \syntax{Q} holds in current state \\
+\syntax{not P} & \syntax{[^p]} & \syntax{P} does not hold in the current state \\
+\syntax{F,G} & \syntax{FG} & Sequence \syntax{F} and then \syntax{G} \\
+\syntax{F;G} & \syntax{F|G} & Either sequence \syntax{F} or \syntax{G} holds \\
+\syntax{F^G} &  & Sequences \syntax{F} and \syntax{G} both hold\\
+\syntax{...} & \syntax{.*} & Matches any number of states \\
+\syntax{F ...} & \syntax{F*} & \syntax{F} matches zero or more states \\
+\syntax{F 1...} & \syntax{F+} & \syntax{F} matches one or more states \\
+\syntax{F M...N} & \syntax{F{M,N}} & \syntax{F} matches between \syntax{M} and \syntax{N} states \\
+\syntax{..} & \syntax{.*?} & Reluctantly matches any number of states; same variations as \syntax{...} \\
+
+\syntax{F***} & \syntax{F}$^\omega$ & \syntax{F} repeats forever
+\end{tabular}
+\caption{Playspec and analogous $\omega$-regex syntax.}
+\label{fig:syntax}
+\end{figure}
+
+
+\begin{figure*}[t]
+\small
+\renewcommand{\arraystretch}{0.4}
+\centering
+\begin{tabular}{ p{0.97\textwidth} } \hline \\
+
+\begin{center}\textbf{Puzzlescript Examples}\end{center}
+
+\syntax{[ROff] & [GOff] & [BOff] 1..., [ROn], [GOff] & [BOff] 1..., [GOn], [BOff] 1..., [BOn], ...}
+
+\\ [-1ex]
+
+The red, green, and blue switches must be flipped in that order. Switch objects are named by a color (\syntax{R}/\syntax{G}/\syntax{B}) and status (\syntax{On}/\syntax{Off}) pair.
+
+
+
+\\ [-1ex]
+
+\begin{verbatim}..., '=@', ..., '=*.=', ..., '=*.=', ..., '=P.=', ..., win & end
+                 =O..         =OP*         =@.* 
+                 =..*\end{verbatim}
+\\ [-1ex]
+
+The player must move a box which starts on a goal position, replacing it after moving a second box. In these 2D patterns, \syntax{@} means both a box (\syntax{*}) and a target (\syntax{O}) are present; \syntax{=} indicates a wall and \syntax{P} the player. In this level, these patterns identify unambiguous locations.
+
+\\ [1ex]
+
+\syntax{20... ^ ..., 5@5 [no Box], ... ^ ..., 7@3 [no Box], ...}
+
+\\ [-1.5ex]
+
+This level requires at least 20 moves, moving two particular boxes at least once each. \syntax{X@Y} forces patterns to match at a specific location.
+
+\\ [-2ex]
+
+\begin{center}\textbf{Prom Week Examples}\end{center} \\ [-0.5ex]
+\syntax{Doug-romance<0.3-Chloe ... ^ not Doug-dating-Chloe 1..., Doug-dating-Chloe}
+
+\\ [-1.5ex]
+
+With a romance network value of less than $0.3$ the entire time, Doug must go from not dating to dating Chloe.
+
+\\ [1ex]
+
+\syntax{Doug-dating-Chloe, ..., not Doug-dating-Chloe, ..., Doug-dating-Jordan & Doug-friends-Chloe}
+
+\\ [-1.5ex]
+
+Doug begins by dating Chloe, but they eventually break up. Doug begins dating Jordan and befriends his old flame.
+
+\\ [1ex]
+
+\syntax{Doug-friends-Chloe, ..., Doug-dating-Chloe ; Doug-dating-Chloe, ..., Doug-friends-Chloe}
+
+\\ [-1.5ex]
+
+Doug befriends Chloe and then starts dating her, or else Doug starts dating Chloe before they become friends.
+
+\\ \hline
+
+\end{tabular}
+\caption{Example \emph{PuzzleScript} and \emph{Prom Week} Playspecs}
+\label{fig:specs}
+\end{figure*}
+
+
+\section{Playspecs}
+\label{sec:playspecs}
+
+\noindent In this paper, we use the term \emph{play trace} to mean a sequence of data generated by activity in a game. The simplest possible play trace might be a log of the inputs provided by the user. Richer traces carry more data: more abstract inputs and events, more elements of the game state, and so on. These traces might be physical files stored on disk or may be generated on the fly by a verification tool. In the case of \emph{PuzzleScript}, a trace is a sequence of player movements and level states found during a search for puzzle solutions. In \emph{Prom Week}, traces contain individual social games and their outcomes; they come from either observed game play (gathered by telemetry) or from exhaustive enumeration of games up to a fixed number of turns. Playspecs assume that game traces are \emph{sequences of sets of facts}.
+
+
+\begin{figure*}[t]
+\centering
+\tiny
+\renewcommand{\arraystretch}{0.5}
+\begin{tabular}{ p{0.7in}  p{1.4in} | p{1.6in}  p{2.3in} }
+
+
+%\small \emph{PuzzleScript} & \small \emph{PuzzleScript} (Playspec Readable) & \small \emph{Prom Week} & \small \emph{Prom Week} (Playspec Readable) \\ \hline
+
+\multicolumn{2}{c}{\emph{PuzzleScript Playtraces}} & \multicolumn{2}{c}{\emph{Prom Week Playtraces}} \\
+%blah & blah2 & blah3 & blah4 \\
+\textbf{Original Trace} & \textbf{Sequence of Sets of Facts} & \textbf{Original Trace} & \textbf{Sequence of Sets of Facts} \\ \hline
+
+\begin{verbatim}{start_state:
+ '=======
+  =.....=
+  =O*..P=
+  =.....=
+  =======',
+ moves:[
+   'left',\end{verbatim}
+&
+\begin{verbatim}turn = 1, move = left, 
+...,
+layer0 @ (1,2) = background, 
+layer1 @ (1,2) = target,
+layer0 @ (2,2) = background,
+layer2 @ (2,2) = box,
+layer0 @ (5,2) = background,
+layer2 @ (5,2) = player,
+...\end{verbatim}
+&
+\begin{verbatim}<SocialGameContext
+  gameName='Share Interest'
+  initiator='Doug'
+  responder='Jordan'
+  effectID='8'
+  chosenItemCKB='retro phone'/>\end{verbatim}
+&
+\begin{verbatim}time = 1,
+doug-!share_interest(8, 'retro phone')-jordan,
+chloe-cool=0.7-doug,
+chloe-romance=0.8-doug,
+chloe-friend=0.5-doug,
+...
+\end{verbatim}
+
+\\ [-2ex]
+\begin{verbatim}   'left',\end{verbatim}
+&
+\begin{verbatim}turn = 2, move = left, 
+...,
+layer0 @ (4,2) = background,
+layer2 @ (4,2) = player,
+layer0 @ (5,2) = background,
+layer0 @ (6,2) = background,
+...\end{verbatim}
+&
+\begin{verbatim}<SocialGameContext
+  gameName='Pick-Up Line'
+  initiator='Chloe'
+  responder='Doug'
+  effectID='6'>
+    <SFDBLabel type='funny'
+      from='Chloe' to='Doug'/>
+    <SFDBLabel type='romantic'
+      from='Chloe' to='Doug'/>
+</SocialGameContext>\end{verbatim}
+&
+\begin{verbatim}time = 2,
+chloe-!pick_up_line(6)-doug,
+chloe-funny-doug,
+chloe-romantic-doug,
+chloe-cool=0.7-doug,
+chloe-romance=0.9-doug,
+chloe-friend=0.6-doug,
+...\end{verbatim}
+\\ [-3ex]
+
+& 
+
+&
+\begin{verbatim}...\end{verbatim}
+&
+\begin{verbatim}...\end{verbatim}
+\\ [-4ex]
+\begin{verbatim}   'left'
+ ]
+}\end{verbatim}
+&
+\begin{verbatim}turn = 3, move = left, 
+winning, 
+...,
+layer0 @ (1,2) = background,
+layer1 @ (1,2) = target,
+layer2 @ (1,2) = box,
+layer0 @ (2,2) = background,
+layer0 @ (2,2) = player,
+...\end{verbatim}
+&
+\begin{verbatim}<SocialGameContext 
+  gameName='Reminisce'
+  initiator='Doug'
+  responder='Chloe'
+  effectID='8'
+  other='Jordan'/>
+\end{verbatim}
+&
+\begin{verbatim}time = 16,
+doug-!reminisce(8, jordan)-chloe,
+...\end{verbatim}
+\\ \hline
+\end{tabular}
+\caption{Play trace data from a simple \emph{PuzzleScript} game and \emph{Prom Week}. For each game the left column illustrates how play traces are recorded, while the right shows (abstractly) the information made available for Playspecs to query at each timestep.}
+\label{fig:traces}
+\end{figure*}
+
+A Playspec \emph{matches} a trace in the same way that a regular expression matches a string. One regex might match several distinct positions in the string or use start and end anchors to only match complete strings; analogously, a Playspec may match a portion of a play trace or an entire trace. Just as a regex describes a set of possible strings (a \emph{language}), each Playspec describes a set of possible traces.
+
+A regex checks whether each character in the string is a member of a particular set of characters, but Playspecs support a variety of complex (often game- or game-engine-specific) queries on individual states. Boolean combinations of these game-specific \emph{basic facts} make up the \emph{state} language fragment of Playspecs, and the game-independent syntax for describing the evolution of states over time is the \emph{trace} (or \emph{regular}) language fragment (Fig.~\ref{fig:syntax} describes both fragments in a side by side comparison of Playspec and  $\omega$-regex syntax).
+
+There are four basic facts which are the same across all games: \syntax{true}, \syntax{false}, \syntax{start}, and \syntax{end}. The first two are self-explanatory; the third and fourth indicate the beginning and end of the play trace respectively (roughly analogous to regex \syntax{^} and \syntax{$} anchors). Note that while the propositional formulae of the state language can be negated, the temporal sequences of the trace language may not be; the lookaround extension we propose later could be put to this purpose.
+
+All other basic facts are game- or genre-specific: Sec.~\ref{sec:motivations} discussed how \emph{Prom Week'}s basic facts query the social state, while \emph{Puzzlescript'}s basic facts concern the current configuration of the puzzle. Some facts could be provided by general-purpose game engines; there is also a connection to the \emph{authorial affordances} of operational logics and domain models~\cite{mateas2009defining,osborn2015combat}, which are portable across game genres.
+
+When considering a sequence of states in Playspecs, the fundamental requirement is a way to advance (or consume) the current state. Regular expressions implicitly advance the stream of characters: \syntax{abc} means an \syntax{a} followed by a \syntax{b} followed by a \syntax{c}. This can also be read as the regex \syntax{a} followed by the regex \syntax{bc}. This is called \emph{concatenation}. Playspecs have more complex syntax for each individual state so we use a comma (\syntax{,}) to indicate concatenation; it could be read as \emph{and then} or \emph{followed by}. A simple example using \emph{Prom Week}: the Playspec \syntax{Doug-mean-Chloe, Doug-guilty, Doug-nice-Chloe} would only match traces in which the player had Doug do something mean to Chloe, then made him feel guilty, and then had him be nice to her. Each of these three basic facts is checked in turn against successive positions of the trace.
+
+A designer doesn't always know in advance how long a property should hold. For instance, we might want to find traces where two characters begin dating but eventually break up. This is analogous in regex to asking for a lowercase letter eventually followed by a number using the Kleene star (\syntax{[a-z].*[0-9]}); there can be any number of characters between our two points of interest (the letter and the number), just as any sequence of game states or player actions may transpire between the characters falling in and out of love. In Playspecs, this \emph{repetition} might be written as \syntax{Doug-dating-Chloe 1..., not Doug-dating-Chloe}. The use of \syntax{...} is read as \emph{dating until no longer dating} (the preceding numeral \syntax{1} requires that the characters are dating for at least one state). The ellipses describe potentially multiple states in which a property holds (\syntax{Doug-dating-Chloe} in our example), with \syntax{true} as a default. \syntax{...} is also \emph{greedy}: it will prefer to consume as many states as possible when matching. The \syntax{..} variants consume as few states as possible. When there are multiple matches, these operators will yield all the same matches in opposite order. Minimum and maximum bounds can also be provided (as in \syntax{1...}), and these default to 0 and infinity.
+
+The regex notion of \emph{alternation} can be used to discover if at least one of several Playspecs holds. We can look for either an \syntax{a} followed by a \syntax{b} or else \syntax{xyz} using the regex \syntax{ab|xyz}. To avoid ambiguity with the state language's propositional disjunction \syntax{|}, and for symmetry with the \syntax{,} of concatenation, Playspecs use \syntax{;} for alternation. Continuing with the dating example, we might want traces where Doug ends up single, i.e.,\ he breaks up with whoever he dates or else never dates in the first place. The Playspec \syntax{not Doug-dating-Chloe ...; Doug-dating-Chloe 1..., not Doug- dating-Chloe} matches when Doug never dates Chloe or they date before eventually breaking up, but doesn't account for Doug and Chloe resuming their relationship and staying together afterwards. By applying the repetition operator to that whole specification, we can match only traces in which Doug never lives happily ever after: \syntax{start, (not Doug-dating-Chloe...; Doug-dating-Chloe 1..., not Doug-dating-Chloe)..., end}.
+
+Note that the number of states consumed by the alternation depends on the branch that matched. A Playspec like \syntax{Doug-lonely, (Doug-dating-Chloe; Doug-friends-Oswald, Doug-friends-Jordan), not Doug-lonely} consumes either three or four states. Alternation can be understood as cloning the expression once for each operand (i.e., either side of the \syntax{;}), replacing the expression with each of the operands, and succeeding if any of these clones match.
+
+As a notational convenience, we introduce \syntax{^}, read as \emph{and} or \emph{intersection}, which is dual to \syntax{;}. Like \syntax{;}, it effectively clones the Playspec for each operand. Unlike \syntax{;}, all clones must match the \emph{same} portion of the trace for the match as a whole to succeed. For simplicity we require that all operands consume the same fixed number of states or that they can be stretched via \syntax{...} to fit the same segment of trace. Formally, this is the intersection of languages: a grammar which only matches strings that appear in both languages.
+This syntax can be used to find play traces where multiple paths leading to a single state must contain certain events or state sequences. Suppose we want to know when Doug becomes enemies with his former friend \emph{and} lover, regardless of whether their initial relationship was Platonic or romantic: \syntax{(..., Doug-friends-Chloe, ... ^ ..., Doug-dating-Chloe, ...), Doug-enemies-Chloe}.
+While regex libraries in most programming languages do not offer intersection, we include it, in part to help define universal quantification (an extension we leave for future work). Further examples of the Playspec syntax described thus far can be found in Fig.~\ref{fig:specs}.
+
+So far, our syntax only recognizes play traces of finite length. While not applicable for \emph{matching} existing traces, Playspecs which specify traces of infinite length can be useful for \emph{verifying} game designs. Checking for infinite loops can detect cases where players get stuck, which would only show up as quitting in a real trace. To forbid such infinite traces, we must be able to describe them. We therefore assume by default that Playspecs recognize finite portions of traces, but introduce syntax for recognizing an infinite \emph{suffix} which satisfies a Playspec repeatedly. The \emph{forever} operator (called $\omega$ in $\omega$-regex) is written with \syntax{***}: it is a semantically and visually lifted version of \syntax{...} indicating that the Playspec it modifies repeats forever. It may only appear at the end of a Playspec, and it will not match any finite play trace. Unlike \syntax{...}, it accepts no time-bounding arguments. 
+
+% * <jcosborn@soe.ucsc.edu> 2015-05-31T15:20:03.091Z:
+%
+%  Do we need any examples of ***?
+%
+
+\section{Integration with Existing Games}
+\label{sec:howtointegrate}
+
+\noindent There are two main decisions when integrating Playspecs with an existing game or game engine: the degree of formality and the content of traces.
+For \emph{Prom Week}, we use Playspecs to filter and match existing play traces; this requires the least effort but is also the least flexible. With \emph{PuzzleScript}, we generate solutions using heuristic search and then test those solutions against Playspecs; this requires few modifications to the underlying game engine, but exhaustively checking solutions has a high computational cost.  Formally modeling the game under consideration would require extra authoring effort but could answer targeted queries very quickly.
+
+The first step towards integrating Playspecs is transforming the game's play traces into sequences of sets of facts. This could involve modifying how traces are recorded, converting traces in an external tool, or performing on-demand translation into this format. In \emph{PuzzleScript} we start with a sequence of input directions which we replay through the game engine to recover the configuration of the level at each step. We write Playspecs over these augmented traces. A game with more complex state might define each set of facts implicitly via a function that determines the truth of a proposition.
+
+Fig.~\ref{fig:traces} shows examples of play traces both in game-native formats and after augmentation with extra state data from re-simulating the recorded input sequence. The concrete syntax shown is only for illustration: for example, each ``set of facts'' in the \emph{PuzzleScript} traces is stored as an array of integers.
+
+As for what comprises a trace, there are three important factors. First is the trace's level of abstraction: the game activity represented in the trace. A trace might contain frame-by-frame or turn-by-turn game states or abstract level-by-level progression. Frame-by-frame traces will be too fine-grained for most use cases besides the unit-testing application.
+
+Second is whether the trace contains instantaneous events, durative states, or both. Using only game events will yield more compact traces, but some specifications may be harder to write; on the other hand, traces with only states may make other Playspecs awkward. Including both (or recovering states by replaying inputs) can be a good option. 
+
+Finally, the implementer must decide on a syntax for game-specific basic facts. These often use tokens and syntactic structures outside of the existing Playspec grammar, for example \emph{Prom Week's} relationship tests or \emph{PuzzleScript's} 1D patterns. Parsing and checking these predicates is necessarily implementation-dependent, but we believe a portable grammar formalism could cover most use cases; due to space limitations we leave that for future work. Our JavaScript reference implementation instead provides a customizable parser. One could also imagine a generic fact syntax.
+
+
+\section{Checking Playspecs}
+\label{sec:checkingplayspecs}
+
+\noindent We now outline algorithms and applications of existing tools to check Playspecs. The simplest case is matching a Playspec against a specific witnessed trace. As with regular expressions, Playspecs are efficiently matched by mechanical transformation into finite automata or an equivalent representation~\cite{Thompson:1968:PTR:363347.363387,cox2011implementing}. Playspecs using the \syntax{***} operator may be rejected in this application---any real play trace is necessarily finite. The main difference from regex matching algorithms is that instead of checking a stream of bytes against values or ranges of values, an implementation checks a sequence of states against logical formulae over each state's set of facts. If a specific game already supports more formal usage of Playspecs, that work can be reused to decide whether an observed trace meets a Playspec: for example, a trivial formal model could be synthesized which only advances through the states in a given trace.
+
+The second level of formality pairs Playspecs with search. For \emph{PuzzleScript}, we developed a heuristic search which solves levels and then ensures those solutions match given Playspecs. We currently only match against complete solutions, but it would be straightforward to match each candidate action incrementally to guide search towards solutions that violate the specifications. Integrating Playspecs with the \emph{PuzzleScript} engine required minimal additions beyond the reloading and replaying necessary for the automated solver's operation; parsing and evaluating the basic facts largely reused built-in features of the engine.
+
+Finally, we consider the verification of Playspecs given a formal model of the game design. Program verification tools commonly work by transforming both the input program (often in a special-purpose modeling language) and the negation of a logical specification into B\"{u}chi automata (the infinite analogue to finite automata), intersecting them, and finding whether there is any sequence of inputs accepted by the newly constructed automaton~\cite{courcoubetis1993memory}. This deserves unpacking. \emph{B\"{u}chi automata} are used instead of the regex-equivalent finite state automata because programs running in finite memory have finitely many states, but may loop infinitely. We use the \emph{negation of the specification} to find whether a trace can be produced which \emph{violates} the original specification, in other words one which satisfies its negation. \emph{Intersecting two automata} means producing a third which only accepts those traces which both the originals would accept---those traces that the program could conceivably produce which also satisfy the negation of the specification. Finally, \emph{detecting non-emptiness} of the language represented by the resulting automaton tells us whether there exist problematic traces. This last check is computationally easy once all the other work has been done.
+%
+All this is to illustrate that Playspecs can be checked by standard algorithms and, indeed, by many standard tools, since they are readily translated to conventional $\omega$-regular expressions and thence to B\"{u}chi automata~\cite{holzmann1997model,cimatti2000nusmv,duret2004spot}. The Playspec and the formal model should be at the same level of abstraction here---for instance, if the Playspec concerns game turns rather than frames, the model should as well.
+%valls2013towards,
+In practice, formal models could certainly be authored by hand using formalisms like transition systems, event calculus, Machinations diagrams~\cite{dormans2009machinations}, or a partial order of requirements~\cite{van2013designing}. Existing non-game modeling languages like Promela~\cite{holzmann1993design} are also excellent candidates, and the translation from Playspecs to a format which those tools support is straightforward and could be automated. If the implementer wants to work directly against their game's program code, semi-automated tools like SPOT can transform a conventional program into an automaton with some API support~\cite{duret2004spot}. There are also program verification tools which can recover models from programs without such API help at the cost of larger models, e.g. DiVinE~\cite{barnat2013divine}.
+
+Finally, it is worth noting that there are many extensions to both linear temporal logic (a conventional verification language which is translated into the B\"{u}chi automata described above) and regexes, ripe for inclusion into Playspecs. Some examples include Metric-LTL~\cite{koymans1990specifying}, which is appropriate for realtime systems like action games; regex lookaround, which could make phrasing certain properties much more concise; first-order quantification, which permits a high level of abstraction over traces --- in short, Playspecs that don't check the state of specific characters (like Doug or Oswald) but rather the states of \emph{roles} that could be filled in by any character (``Doug's friend'', ``Oswald's lover'')~\cite{kroger2008first}; Probabilistic-LTL which describes likely versus unlikely possibilities~\cite{baier1998algorithmic}; and regex-style capture groups to identify particular subsequences of interest within the matched segment of a play trace (our reference implementation supports this extension already).
+
+\section{Related Work}
+\label{sec:relatedwork}
+
+\noindent Playspecs are strongly related to previous logical formalisms that have been proposed for specifying game traces. The most similar is probably the trace grammar proposed for \emph{Ludocore}~\cite{smith2011towards}. This formalism queries existing traces with arbitrarily quantified Boolean formulae using a Prolog-like syntax, a subset of which can be used with a logical game engine to perform targeted search. Compared to the high computational complexity of this approach, Playspecs with their linear-time, backtracking-free match-query procedure fill a potentially large niche for which the prior work is inappropriate. Furthermore, Playspecs integrate with existing program verification tools and the regular expression-like syntax may be easier for game designers to author than the Prolog-like syntax of the prior work.
+
+In general, techniques which permit the formulation and checking of useful properties over game traces require a total investment in formal methods, including logically modeling much of the game in question~\cite{smith2009computational,shaker2013evolving,butler2013mixed}. Playspecs offer a scalable investment in formality: it should be possible to write Playspecs over existing traces with relatively little effort to determine whether Playspecs will be of use to the designer. Further integration with a game engine or formal game modeling can be approached piecemeal and use the exact same specifications. One could even use Playspecs as a frontend, reducing them to sets of first-order logic event calculus statements.
+
+These latter tools are often referred to as automated playtesters; besides such player-centric testing, Playspecs can support the unit-testing activities of game programmers. In this sense, they could be viewed as a generalization of \emph{Inform 7's} Skein~\cite{nelson2006natural}: instead of expecting a concrete output text for a given input sequence, a tester could provide inputs and require that, on replay, the resulting trace satisfies one or several Playspecs. Playspecs' ability to elide details about the sequence of game states should make writing unit tests for games easier and more modular. If the input sequence were also generated via Playspecs, property-based testing tools~\cite{Arts:2006:TTS:1159789.1159792,hughes2010using} could find violations; this is an incomplete solution compared to formal verification, but might be easier to integrate with existing software.
+
+Finally, we note that some effort has been expended on converting puzzle solutions into strings where each character encodes information about a solution step~\cite{andersen2013trace}. We have learned via personal communication that researchers have analyzed such strings using textual regular expressions; this is similar to our method in that it uses regular expressions, but it is less general.
+
+\section{Conclusion}
+
+\noindent We have described Playspecs, motivations for their use, ways to integrate them into existing games and game engines, and related work in the field of games. Implementers can use this paper and our reference implementation as a starting point.
+
+We hope that game developers---especially game engine developers---adopt Playspecs at least at the level of matching and selecting existing or randomly generated traces, and ideally that they offer ways to drive their game engines via Playspecs. We further hope that game researchers will consider Playspecs as their language of choice for specifying properties of interest for formal models of games. We believe that as a language for defining the evolution of game states over time, Playspecs could undergird a rigorous study of game \emph{dynamics} in the sense used by the MDA framework~\cite{hunicke2004mda}, which are so far under-theorized compared to game mechanics and aesthetics. Playspecs could be applied to AI play by running them \emph{backwards}, generating rather than recognizing traces (as in the use of linear temporal logic in the planning community~\cite{baier2006planning}). We also suspect that Playspecs (perhaps with fuzzy or probabilistic extensions) have applications for general game playing, particularly in opponent modeling or characterizing sets of play traces produced by random or self-play. They could also be used in generative systems to filter out generated content that violates designer-specified invariants, or to support player-adaptive games by matching against the currently-unfolding play trace (perhaps in the service of drama management).
+
+With extensions for first-order quantification, Playspecs could describe game rules directly; the authors have done so for noughts-and-crosses and other simple games. The insight is that a game implicitly defines a set of valid input traces, and Playspecs also define sets of traces. Game rules whose effects are distributed over time or with complex conditions are especially good candidates for definition in this style.
+
+Playspecs' utility is determined in large part by the naturalness of their syntax. Making this syntax convenient enough to define on a game-by-game basis is key to their success and represents important future work.
+
+%%%%%%%%%%
+% References and End of Paper
+{
+\small
+\bibliography{playspecs-aiide-2015}
+\bibliographystyle{aaai}
+}
+\end{document}
+
+
+
+
+

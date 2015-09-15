@@ -147,6 +147,7 @@
         var oneMatch = spec.match("AA", true);
         ex(oneMatch.start, 0);
         ex(oneMatch.end, 2);
+        ex(oneMatch.next(), null);
         // If sequences are preserved, there will be a `states` key on the `PlayspecResult`.
         ex(oneMatch.states.join(""), "AA");
         // Matches can also occur in the middle of a trace.
@@ -245,13 +246,94 @@
     may seem a little strange at first&mdash;but they seem to be necessary for efficiently combining both intersection
     and subgroup matching.</p>
 
-<h3 id="subgroups">Subgroup Matching</h3>
+<h3 id="subgroups">Subgroup Capture</h3>
 
-where start indices come from
+<p>The interpreter described so far only has enough information about the match to yield its ending position, not its
+    starting one&mdash;recall that every match is anchored to the first character! In fact, it implicitly uses the
+    subgroup capture extension to provide the whole match, as if the whole Playspec were wrapped in a capture. We use an
+    explicit syntax for capturing groups, where each group may have an optional identifier (consisting of letters,
+    numbers, and underscores and must start with a letter or an underscore). In effect, each Playspec <code>p</code> is
+    interpreted as <code>$root(p)</code>. Captures may be nested arbitrarily, but may not appear inside of propositional
+    terms.</p>
 
-start/end instructions
+<p>Our use of captures differs somewhat from conventional regular expression libraries. The biggest difference is that
+    captures which are enclosed within repetitions appear in the resulting match object multiple times. For the intended
+    use case of describing game play traces, this seemed like the best decision. A match result is therefore a list of
+    captures, with the root capture first and subsequent captures following. Each capture is tagged with its identifier
+    and its index.</p>
 
-more on matches as instruction sequences, extending them, merging them
+<p>At compilation time, a capture group turns into a pair of <code class="bytecode">start Group</code> and
+    <code class="bytecode">end Group</code> instructions, with the group body in between. During interpretation, each
+    thread tracks the contents of the capture groups it has seen. These two instructions cause their executing threads
+    to begin and end the named captures. Because playtrace states may be transient (they may come from on-demand
+    simulation rather than from a pre-calculated list), if the sequence-preserving option is given to <code>match</code>
+    then each <code class="bytecode">check</code> instruction also stores a reference to the current state with the
+    executing thread whenever it has an active capture (whenever it is between a start and an end instruction). These
+    three commands&mdash;starting, continuing, and stopping a capture&mdash;form a simple instruction set which is
+    robust to the splitting and merging of threads.</p>
+
+<p>When two threads are merged, one may have a different set of sequences of matches than the other. We want to
+    preserve them both so we take the union of both sets, updating the priority of each match to be no less than the
+    better thread's priority. Note that this means one thread may be responsible for several matches with different
+    priority levels! Correspondingly, when splitting a thread, the split side gets a copy of the original thread's match
+    set, updating the priority of these matches in the same way. All of this copying could probably be avoided using
+    some extra bookkeeping data or with immutable data structures.</p>
+
+<p>When a thread finally matches, the match sequences in its match set are all added to the interpreter's match queue in
+    priority order. When a match is popped from the queue as described above, its sequence of
+    <code class="bytecode">start</code>, <code class="bytecode">state</code>, and <code class="bytecode">end</code>
+    instructions is evaluated to produce a sequence of capture objects with the following properties:</p>
+
+<dl>
+    <dt>group</dt>
+    <dd>The supplied or generated capture group identifier.</dd>
+    <dt>groupIndex</dt>
+    <dd>The index of this capture group. Groups are numbered left-to-right.</dd>
+    <dt>start</dt>
+    <dd>The beginning time-point of this capture with respect to the start of the play trace.</dd>
+    <dt>end</dt>
+    <dd>The end time-point of this capture with respect to the start of the play trace.</dd>
+    <dt>states</dt>
+    <dd>If states are included, the list of states comprising this capture.</dd>
+</dl>
+
+<p>All these captures (except for the first implicit root capture) are collected in the order in which they started and
+    stored in the <code>subgroups</code> field of the match result. Empty captures are dropped.</p>
+
+<script>
+    desc("", function () {
+        var spec = new Playspecs.Playspec("start, $(a & upper), $((b;c) ...)", lettersContext);
+        // This will match twice: first zAb (with two captures), then zA (with one capture).
+        var twoMatches = spec.match("zAb");
+        ex(twoMatches.start, 0);
+        ex(twoMatches.end, 3);
+        ex(twoMatches.subgroups.length, 2);
+        ex(twoMatches.subgroups[0].start, 1);
+        ex(twoMatches.subgroups[0].end, 2);
+        ex(twoMatches.subgroups[1].start, 2);
+        ex(twoMatches.subgroups[1].end, 3);
+        // Call `.next()` on the match result to get the next match, a fresh `PlayspecResult` object.
+        twoMatches = twoMatches.next();
+        ex(twoMatches.start, 0);
+        ex(twoMatches.end, 2);
+        ex(twoMatches.subgroups.length, 1);
+        ex(twoMatches.subgroups[0].start, 1);
+        ex(twoMatches.subgroups[0].end, 2);
+        // Eventually, it will return null
+        twoMatches = twoMatches.next();
+        ex(twoMatches, null);
+
+        // Preserving state sequences:
+        var oneMatch = spec.match("AA", true);
+        ex(oneMatch.start, 0);
+        ex(oneMatch.end, 2);
+        ex(oneMatch.next(), null);
+        // If sequences are preserved, there will be a `states` key on the `PlayspecResult` and on each subgroup.
+        ex(oneMatch.states.join(""), "AA");
+        ex(oneMatch.subgroups.length, 1);
+        ex(oneMatch.subgroups[0].states.join(""), "A");
+    });
+</script>
 
 <h3>Intersection</h3>
 

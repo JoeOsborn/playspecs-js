@@ -9,6 +9,7 @@ export const tokenTypes:{ [key: string]: string } = {
     DOTS_OMEGA: "***",
     LEFT_PAREN: "(",
     RIGHT_PAREN: ")",
+    CAPTURING_LEFT_PAREN: "$(",
     ALTERNATION: ";",
     INTERSECTION: "^",
     AND: "&",
@@ -25,6 +26,7 @@ export const parseTypes:{ [key: string]: string } = {
     OMEGA: tokenTypes.DOTS_OMEGA,
     REPETITION: tokenTypes.DOTS_GREEDY,
     CONCATENATION: tokenTypes.CONCATENATION,
+    CAPTURE: "$(",
     GROUP: tokenTypes.LEFT_PAREN,
     ALTERNATION: tokenTypes.ALTERNATION,
     INTERSECTION: tokenTypes.INTERSECTION,
@@ -192,6 +194,24 @@ export const standardTokens:Array<TokenSchema> = [
         match: [tokenTypes.RIGHT_PAREN]
     },
     {
+        type: tokenTypes.CAPTURING_LEFT_PAREN,
+        match: /^\$([A-z_][A-z_0-9]*)?\(/,
+        value: function (matchResult:MatchResult) {
+            return {
+                group: matchResult[1] || "$implicit"
+            };
+        },
+        startParse: function (parser:Parser, token:Token):ParseTree {
+            //parse an expression at RBP 0, then eat a )
+            const expr = parser.parseExpression(0);
+            if (parser.currentToken().type != tokenTypes.RIGHT_PAREN) {
+                return parser.error("Missing right parenthesis", token, expr);
+            }
+            parser.advance();
+            return parser.node(parseTypes.CAPTURE, token.value, [expr]);
+        }
+    },
+    {
         type: tokenTypes.ALTERNATION,
         match: [tokenTypes.ALTERNATION],
         tightness: 60,
@@ -282,7 +302,7 @@ export function isPropositional(p:ParseTree):bool {
         p.type == parseTypes.FALSE ||
         p.type == parseTypes.START ||
         p.type == parseTypes.END ||
-        (p.type == parseTypes.GROUP &&
+        ((p.type == parseTypes.GROUP||p.type == parseTypes.CAPTURE) &&
         p.children.every(function (c) {
             return isPropositional(c);
         }));

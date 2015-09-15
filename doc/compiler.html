@@ -152,13 +152,13 @@
             "0:split 3 1\n" +
             "1:check true\n" +
             "2:jump 0\n" +
-            "3:start $root\n" +
+            "3:start $root (-1)\n" +
             "4:check start\n" +
             "5:split 6 8\n" +
             "6:check not LINK_RELATIONSHIP(,PERSON(Chloe,),RELATIONSHIP(dating,),PERSON(Doug,))\n" +
             "7:jump 5\n" +
             "8:check LINK_RELATIONSHIP(,PERSON(Doug,),RELATIONSHIP(embarrassed,),PERSON(Chloe,)) & end\n" +
-            "9:end $root\n" +
+            "9:end $root (-1)\n" +
             "10:match";
     desc("<p>First, we should compile a simple Playspec. While in practice the <code>Playspecs</code> module is " +
             "the most convenient way to construct Playspecs, here we want to illustrate <code>Compiler</code>'s " +
@@ -198,7 +198,8 @@
             },
             {
                 "type": "start",
-                "group": "$root"
+                "group": "$root",
+                "captureID": -1
             },
             {
                 "type": "check",
@@ -330,7 +331,8 @@
             },
             {
                 "type": "end",
-                "group": "$root"
+                "group": "$root",
+                "captureID": -1
             },
             {
                 "type": "match"
@@ -345,7 +347,7 @@
     expectedStringProgram = "0:split 3 1  		(root)\n" +
             "1:check true  		(root)\n" +
             "2:jump 0  		(root)\n" +
-            "3:start $root  		(root)\n" +
+            "3:start $root (-1)  		(root)\n" +
             "4:check true	(ch. 0-0)\n" +
             "5:check true	(ch. 0-0)\n" +
             "6:check true	(ch. 0-0)\n" +
@@ -364,7 +366,7 @@
             "19:check false	(ch. 26-31)\n" +
             "20:check true	(ch. 33-37)\n" +
             "21:jump 11		(... {\"greedy\":true,\"lowerBound\":0,\"upperBound\":\"$END\"})\n" +
-            "22:end $root  		(root)\n" +
+            "22:end $root (-1)  		(root)\n" +
             "23:match  		(root)";
     desc("<p>The gadgets all work as defined in the table above. For complicated programs, it may help understanding " +
             "to pass the <code>debug=true</code> flag to <code>compile()</code>, which maintains per-instruction " +

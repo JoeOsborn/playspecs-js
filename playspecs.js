@@ -108,6 +108,7 @@ var Playspecs =
 	    DOTS_OMEGA: "***",
 	    LEFT_PAREN: "(",
 	    RIGHT_PAREN: ")",
+	    CAPTURING_LEFT_PAREN: "$(",
 	    ALTERNATION: ";",
 	    INTERSECTION: "^",
 	    AND: "&",
@@ -125,6 +126,7 @@ var Playspecs =
 	    OMEGA: tokenTypes.DOTS_OMEGA,
 	    REPETITION: tokenTypes.DOTS_GREEDY,
 	    CONCATENATION: tokenTypes.CONCATENATION,
+	    CAPTURE: "$(",
 	    GROUP: tokenTypes.LEFT_PAREN,
 	    ALTERNATION: tokenTypes.ALTERNATION,
 	    INTERSECTION: tokenTypes.INTERSECTION,
@@ -252,6 +254,23 @@ var Playspecs =
 	    type: tokenTypes.RIGHT_PAREN,
 	    match: [tokenTypes.RIGHT_PAREN]
 	}, {
+	    type: tokenTypes.CAPTURING_LEFT_PAREN,
+	    match: /^\$([A-z_][A-z_0-9]*)?\(/,
+	    value: function value(matchResult) {
+	        return {
+	            group: matchResult[1] || "$implicit"
+	        };
+	    },
+	    startParse: function startParse(parser, token) {
+	        //parse an expression at RBP 0, then eat a )
+	        var expr = parser.parseExpression(0);
+	        if (parser.currentToken().type != tokenTypes.RIGHT_PAREN) {
+	            return parser.error("Missing right parenthesis", token, expr);
+	        }
+	        parser.advance();
+	        return parser.node(parseTypes.CAPTURE, token.value, [expr]);
+	    }
+	}, {
 	    type: tokenTypes.ALTERNATION,
 	    match: [tokenTypes.ALTERNATION],
 	    tightness: 60,
@@ -325,7 +344,7 @@ var Playspecs =
 	}
 	
 	function isPropositional(p) {
-	    return isCustom(p) || p.type == parseTypes.AND || p.type == parseTypes.OR || p.type == parseTypes.NOT || p.type == parseTypes.TRUE || p.type == parseTypes.FALSE || p.type == parseTypes.START || p.type == parseTypes.END || p.type == parseTypes.GROUP && p.children.every(function (c) {
+	    return isCustom(p) || p.type == parseTypes.AND || p.type == parseTypes.OR || p.type == parseTypes.NOT || p.type == parseTypes.TRUE || p.type == parseTypes.FALSE || p.type == parseTypes.START || p.type == parseTypes.END || (p.type == parseTypes.GROUP || p.type == parseTypes.CAPTURE) && p.children.every(function (c) {
 	        return isPropositional(c);
 	    });
 	}
@@ -519,6 +538,8 @@ var Playspecs =
 	var Compiler = (function () {
 	    function Compiler(_ctx) {
 	        _classCallCheck(this, Compiler);
+	
+	        this.captureIdx = 0;
 	    }
 	
 	    _createClass(Compiler, [{
@@ -526,8 +547,22 @@ var Playspecs =
 	        value: function compileTree(tree, idx) {
 	            //console.log(`compile ${tree.type} at index ${idx}`);
 	            if (tree.type == _parser.parseTypes.GROUP) {
-	                // TODO: submatch saving
 	                return this.compileTree(tree.children[0], idx);
+	            }
+	            if (tree.type == _parser.parseTypes.CAPTURE) {
+	                var _captureID = this.captureIdx;
+	                var _group = tree.value.group == "$implicit" ? _captureID : tree.value.group;
+	                var start = { type: "start", group: _group, captureID: _captureID, index: idx, source: tree };
+	                this.captureIdx++;
+	                var children = this.compileTree(tree.children[0], idx + 1);
+	                var end = {
+	                    type: "end",
+	                    group: _group,
+	                    captureID: _captureID,
+	                    index: idx + 1 + children.length,
+	                    source: tree
+	                };
+	                return [start].concat(children).concat([end]);
 	            }
 	            if ((0, _parser.isPropositional)(tree)) {
 	                //console.log("tree " + JSON.stringify(tree) + ":" + tree.type + " is propositional");
@@ -615,7 +650,6 @@ var Playspecs =
 	                }
 	            }
 	            throw new Error("Can't compile " + JSON.stringify(tree));
-	            return [];
 	        }
 	    }, {
 	        key: "compile",
@@ -625,6 +659,10 @@ var Playspecs =
 	            if (!tree.type && tree.tree && tree.errors && tree.remainder) {
 	                throw new Error("Received a ParseResult, but expected a ParseTree." + "Call compile() with the .tree element of " + tree);
 	            }
+	            if (!this.validateParseTree(tree)) {
+	                throw new Error("Parse tree did not represent a valid program");
+	            }
+	            this.captureIdx = 0;
 	            // We preface every program with "true .." so that all Playspecs are effectively start-anchored.
 	            // This is as per https://swtch.com/~rsc/regexp/regexp2.html
 	            var preface = [{ type: "split", left: 3, right: 1, index: 0, source: "root" }, {
@@ -637,11 +675,12 @@ var Playspecs =
 	                },
 	                index: 1,
 	                source: "root"
-	            }, { type: "jump", target: 0, index: 2, source: "root" }, { type: "start", group: "$root", index: 3, source: "root" }];
+	            }, { type: "jump", target: 0, index: 2, source: "root" }, { type: "start", group: "$root", captureID: -1, index: 3, source: "root" }];
 	            var body = this.compileTree(tree, preface.length);
 	            var result = preface.concat(body).concat([{
 	                type: "end",
 	                group: "$root",
+	                captureID: -1,
 	                index: preface.length + body.length,
 	                source: "root"
 	            }, {
@@ -649,7 +688,7 @@ var Playspecs =
 	                index: preface.length + body.length + 1,
 	                source: "root"
 	            }]);
-	            if (!this.validate(result)) {
+	            if (!this.validateProgram(result)) {
 	                throw new Error("Error compiling tree " + JSON.stringify(tree) + " into result " + JSON.stringify(result));
 	            }
 	            if (!debug) {
@@ -661,8 +700,34 @@ var Playspecs =
 	            return result;
 	        }
 	    }, {
-	        key: "validate",
-	        value: function validate(pgm) {
+	        key: "validateParseTree",
+	        value: function validateParseTree(parseTree) {
+	            // ensure no ${} underneath a proposition
+	            if (this.anyCapturesInsidePropositions(parseTree)) {
+	                return false;
+	            }
+	            // todo: other sanity checks
+	            return true;
+	        }
+	    }, {
+	        key: "anyCapturesInsidePropositions",
+	        value: function anyCapturesInsidePropositions(parent) {
+	            var prop = (0, _parser.isPropositional)(parent);
+	            for (var ci = 0; ci < parent.children.length; ci++) {
+	                var child = parent.children[ci];
+	                if (prop && child.type == _parser.parseTypes.CAPTURE) {
+	                    console.log("Can't put a capturing group inside of a propositional term: " + this.stringifyFormula(parent) + "!");
+	                    return true;
+	                }
+	                if (this.anyCapturesInsidePropositions(child)) {
+	                    return true;
+	                }
+	            }
+	            return false;
+	        }
+	    }, {
+	        key: "validateProgram",
+	        value: function validateProgram(pgm) {
 	            // todo: validate programs against some basic sanity checks.
 	            //ensure each instruction's index is its index in pgm
 	            //ensure no split or jump goes beyond end of program
@@ -700,6 +765,8 @@ var Playspecs =
 	                    return "not " + this.stringifyFormula(formula.children[0]);
 	                case _parser.parseTypes.GROUP:
 	                    return "(" + this.stringifyFormula(formula.children[0]) + ")";
+	                case _parser.parseTypes.CAPTURE:
+	                    return "$" + formula.captureID + ":" + formula.group + "(" + this.stringifyFormula(formula.children[0]) + ")";
 	                default:
 	                    return this.stringifyCustom(formula);
 	            }
@@ -723,7 +790,7 @@ var Playspecs =
 	                        break;
 	                    case "start":
 	                    case "end":
-	                        instrStr += " " + instr.group;
+	                        instrStr += " " + instr.group + " (" + instr.captureID + ")";
 	                        break;
 	                    case "match":
 	                        break;
@@ -789,6 +856,9 @@ var Playspecs =
 	        var parser = new _parserJs.Parser(context);
 	        var compiler = new _compilerJs2["default"](context);
 	        this.parseResult = parser.parse(spec);
+	        if (this.parseResult.errors.length) {
+	            throw new Error("Parsed with errors:" + JSON.stringify(this.parseResult.errors));
+	        }
 	        this.program = compiler.compile(this.parseResult.tree, debug);
 	    }
 	
@@ -873,6 +943,7 @@ var Playspecs =
 	                for (var j = 0; j < this.matches.length; j++) {
 	                    if (matchEquivFn(this.matches[j], other.matches[i])) {
 	                        found = true;
+	                        break;
 	                    }
 	                }
 	                if (!found) {
@@ -1040,7 +1111,7 @@ var Playspecs =
 	        return false;
 	    }
 	    for (var i = 0; i < a.instructions.length; i++) {
-	        if (a[i].type != b[i].type || a[i].index != b[i].index || a[i].target != b[i].target) {
+	        if (a[i].type != b[i].type || a[i].index != b[i].index || a[i].group != b[i].group) {
 	            return false;
 	        }
 	    }
@@ -1271,7 +1342,8 @@ var Playspecs =
 	                        // +1 because the _current_ trace index just matched previously, so we don't want to include it in
 	                        // the match that starts with the _next_ character.
 	                        index: this.state.index + 1,
-	                        target: instr.group
+	                        group: instr.group,
+	                        groupIndex: instr.captureID
 	                    });
 	                    thread.pc++;
 	                    this.enqueueThread(thread);
@@ -1281,7 +1353,8 @@ var Playspecs =
 	                        type: "end",
 	                        // +1 for same reason as above.
 	                        index: this.state.index + 1,
-	                        target: instr.group
+	                        group: instr.group,
+	                        groupIndex: instr.captureID
 	                    });
 	                    thread.pc++;
 	                    this.enqueueThread(thread);
@@ -1341,7 +1414,12 @@ var Playspecs =
 	                var instr = m.instructions[i];
 	                switch (instr.type) {
 	                    case "start":
-	                        var newG = { group: instr.target, start: instr.index, end: Infinity };
+	                        var newG = {
+	                            group: instr.group,
+	                            groupIndex: instr.groupIndex,
+	                            start: instr.index,
+	                            end: Infinity
+	                        };
 	                        if (this.config.preserveStates) {
 	                            newG.states = [];
 	                        }
@@ -1359,9 +1437,9 @@ var Playspecs =
 	                        }
 	                        break;
 	                    case "end":
-	                        var finishedG = liveGroups[instr.target];
+	                        var finishedG = liveGroups[instr.group];
 	                        finishedG.end = instr.index;
-	                        delete liveGroups[instr.target];
+	                        delete liveGroups[instr.group];
 	                        break;
 	                }
 	            }
@@ -1370,7 +1448,14 @@ var Playspecs =
 	                throw new Error("Open capture groups: " + openGroups.join(","));
 	            }
 	            var rootGroup = groups.shift();
-	            var rootMatch = { start: rootGroup.start, end: rootGroup.end, subgroups: groups };
+	            var rootMatch = {
+	                start: rootGroup.start,
+	                end: rootGroup.end,
+	                //TODO: Ought empty captures to be dropped?
+	                subgroups: groups.filter(function (group) {
+	                    return group.start != group.end;
+	                })
+	            };
 	            if (this.config.preserveStates) {
 	                rootMatch.states = rootGroup.states;
 	            }
@@ -1472,6 +1557,11 @@ var Playspecs =
 	        key: "states",
 	        get: function get() {
 	            return this.match ? this.match.states : undefined;
+	        }
+	    }, {
+	        key: "subgroups",
+	        get: function get() {
+	            return this.match ? this.match.subgroups : undefined;
 	        }
 	    }]);
 	

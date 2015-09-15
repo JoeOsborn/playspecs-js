@@ -11,6 +11,9 @@ export default class Playspec {
         const parser = new Parser(context);
         const compiler = new Compiler(context);
         this.parseResult = parser.parse(spec);
+        if(this.parseResult.errors.length) {
+            throw new Error("Parsed with errors:"+JSON.stringify(this.parseResult.errors));
+        }
         this.program = compiler.compile(this.parseResult.tree, debug);
     }
 
@@ -81,6 +84,7 @@ class Thread {
             for (let j = 0; j < this.matches.length; j++) {
                 if (matchEquivFn(this.matches[j], other.matches[i])) {
                     found = true;
+                    break;
                 }
             }
             if (!found) {
@@ -217,7 +221,7 @@ function hashNumbers(...numbers:Array<Number>):number {
 }
 
 type
-MatchInstruction = {type: "start" | "end", target: string | number, index: number} |
+MatchInstruction = {type: "start" | "end", group: string | number, groupIndex: number, index: number} |
     {type: "state", index: number, state: any};
 type
 Match = {priority: number, instructions: Array < MatchInstruction >};
@@ -227,7 +231,7 @@ const matchEquivFn = function (a:Match, b:Match) {
         return false;
     }
     for (let i = 0; i < a.instructions.length; i++) {
-        if (a[i].type != b[i].type || a[i].index != b[i].index || a[i].target != b[i].target) {
+        if (a[i].type != b[i].type || a[i].index != b[i].index || a[i].group != b[i].group) {
             return false;
         }
     }
@@ -408,6 +412,10 @@ class PlayspecResult {
         return this.match ? this.match.states : undefined;
     }
 
+    get subgroups() {
+        return this.match ? this.match.subgroups : undefined;
+    }
+
     hasReadyMatch():boolean {
         if (!this.state.matchQueue.length) {
             return false;
@@ -443,7 +451,8 @@ class PlayspecResult {
                     // +1 because the _current_ trace index just matched previously, so we don't want to include it in
                     // the match that starts with the _next_ character.
                     index: this.state.index + 1,
-                    target: instr.group
+                    group: instr.group,
+                    groupIndex: instr.captureID
                 });
                 thread.pc++;
                 this.enqueueThread(thread);
@@ -453,7 +462,8 @@ class PlayspecResult {
                     type: "end",
                     // +1 for same reason as above.
                     index: this.state.index + 1,
-                    target: instr.group
+                    group: instr.group,
+                    groupIndex: instr.captureID
                 });
                 thread.pc++;
                 this.enqueueThread(thread);
@@ -512,7 +522,12 @@ class PlayspecResult {
             const instr = m.instructions[i];
             switch (instr.type) {
                 case "start":
-                    let newG = {group: instr.target, start: instr.index, end: Infinity};
+                    let newG = {
+                        group: instr.group,
+                        groupIndex: instr.groupIndex,
+                        start: instr.index,
+                        end: Infinity
+                    };
                     if (this.config.preserveStates) {
                         newG.states = [];
                     }
@@ -530,9 +545,9 @@ class PlayspecResult {
                     }
                     break;
                 case "end":
-                    let finishedG = liveGroups[instr.target];
+                    let finishedG = liveGroups[instr.group];
                     finishedG.end = instr.index;
-                    delete liveGroups[instr.target];
+                    delete liveGroups[instr.group];
                     break;
             }
         }
@@ -541,7 +556,14 @@ class PlayspecResult {
             throw new Error(`Open capture groups: ${openGroups.join(",")}`);
         }
         let rootGroup = groups.shift();
-        let rootMatch = {start:rootGroup.start, end:rootGroup.end, subgroups:groups};
+        let rootMatch = {
+            start:rootGroup.start,
+            end:rootGroup.end,
+            //TODO: Ought empty captures to be dropped?
+            subgroups:groups.filter(
+                (group) => group.start != group.end
+            )
+        };
         if(this.config.preserveStates) {
             rootMatch.states = rootGroup.states;
         }

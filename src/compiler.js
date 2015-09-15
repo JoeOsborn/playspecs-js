@@ -8,21 +8,35 @@ Instruction =
     {type: "jump", target: number, index? : number, source? : "root" | ParseTree} |
     {type: "split", left: number, right: number, index? : number, source? : "root" | ParseTree} |
     {type: "match", index? : number, source? : "root" | ParseTree} |
-    {type: "start", group: string | number, index? : number, source? : "root" | ParseTree} |
-    {type: "end", group: string | number, index? : number, source? : "root" | ParseTree};
+    {type: "start", group: string | number, captureID: number, index? : number, source? : "root" | ParseTree} |
+    {type: "end", group: string | number, captureID: number, index? : number, source? : "root" | ParseTree};
 type
 Program = Array < Instruction >;
 
 export default class Compiler {
     constructor(_ctx) {
-
+        this.captureIdx = 0;
     }
 
     compileTree(tree:ParseTree, idx:number):Program {
         //console.log(`compile ${tree.type} at index ${idx}`);
         if (tree.type == parseTypes.GROUP) {
-            // TODO: submatch saving
             return this.compileTree(tree.children[0], idx);
+        }
+        if (tree.type == parseTypes.CAPTURE) {
+            const captureID = this.captureIdx;
+            const group = tree.value.group == "$implicit" ? captureID : tree.value.group;
+            const start = {type: "start", group: group, captureID: captureID, index: idx, source: tree};
+            this.captureIdx++;
+            const children = this.compileTree(tree.children[0], idx + 1);
+            const end = {
+                type: "end",
+                group: group,
+                captureID: captureID,
+                index: idx + 1 + children.length,
+                source: tree
+            };
+            return [start].concat(children).concat([end]);
         }
         if (isPropositional(tree)) {
             //console.log("tree " + JSON.stringify(tree) + ":" + tree.type + " is propositional");
@@ -112,7 +126,6 @@ export default class Compiler {
             }
         }
         throw new Error("Can't compile " + JSON.stringify(tree));
-        return [];
     }
 
     compile(tree:ParseTree, debug:bool = false):Program {
@@ -122,6 +135,10 @@ export default class Compiler {
                 "Call compile() with the .tree element of " + tree
             );
         }
+        if (!this.validateParseTree(tree)) {
+            throw new Error("Parse tree did not represent a valid program");
+        }
+        this.captureIdx = 0;
         // We preface every program with "true .." so that all Playspecs are effectively start-anchored.
         // This is as per https://swtch.com/~rsc/regexp/regexp2.html
         const preface = [
@@ -138,13 +155,14 @@ export default class Compiler {
                 source: "root"
             },
             {type: "jump", target: 0, index: 2, source: "root"},
-            {type: "start", group: "$root", index: 3, source: "root"}
+            {type: "start", group: "$root", captureID: -1, index: 3, source: "root"}
         ];
         const body = this.compileTree(tree, preface.length);
         const result = preface.concat(body).concat([
             {
                 type: "end",
                 group: "$root",
+                captureID: -1,
                 index: preface.length + body.length,
                 source: "root"
             },
@@ -154,7 +172,7 @@ export default class Compiler {
                 source: "root"
             }
         ]);
-        if (!this.validate(result)) {
+        if (!this.validateProgram(result)) {
             throw new Error(
                 "Error compiling tree " + JSON.stringify(tree) + " into result " + JSON.stringify(result)
             );
@@ -168,7 +186,31 @@ export default class Compiler {
         return result;
     }
 
-    validate(pgm:Program):bool {
+    validateParseTree(parseTree:ParseTree):bool {
+        // ensure no ${} underneath a proposition
+        if (this.anyCapturesInsidePropositions(parseTree)) {
+            return false;
+        }
+        // todo: other sanity checks
+        return true;
+    }
+
+    anyCapturesInsidePropositions(parent:ParseTree) {
+        const prop = isPropositional(parent);
+        for (let ci = 0; ci < parent.children.length; ci++) {
+            const child = parent.children[ci];
+            if (prop && child.type == parseTypes.CAPTURE) {
+                console.log(`Can't put a capturing group inside of a propositional term: ${this.stringifyFormula(parent)}!`);
+                return true;
+            }
+            if (this.anyCapturesInsidePropositions(child)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    validateProgram(pgm:Program):bool {
         // todo: validate programs against some basic sanity checks.
         //ensure each instruction's index is its index in pgm
         //ensure no split or jump goes beyond end of program
@@ -202,6 +244,8 @@ export default class Compiler {
                 return `not ${this.stringifyFormula(formula.children[0])}`;
             case parseTypes.GROUP:
                 return `(${this.stringifyFormula(formula.children[0])})`;
+            case parseTypes.CAPTURE:
+                return `$${formula.captureID}:${formula.group}(${this.stringifyFormula(formula.children[0])})`;
             default:
                 return this.stringifyCustom(formula);
         }
@@ -224,7 +268,7 @@ export default class Compiler {
                     break;
                 case "start":
                 case "end":
-                    instrStr += ` ${instr.group}`;
+                    instrStr += ` ${instr.group} (${instr.captureID})`;
                     break;
                 case "match":
                     break;

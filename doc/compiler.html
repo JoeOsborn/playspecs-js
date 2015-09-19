@@ -2,6 +2,7 @@
 <head>
     <link rel="stylesheet" href="resources/css/explain.css"/>
     <link rel="stylesheet" href="resources/css/footnotes.css"/>
+    <script src="resources/js/viz.js"></script>
     <script src="resources/js/explain.js"></script>
     <script src="../playspecs.js"></script>
 </head>
@@ -27,9 +28,9 @@
     unconditional jump destination), <code class="bytecode">split Left Right</code> (where both arguments are integers
     describing program counter values), and <code class="bytecode">match</code> which indicates a thread has
     successfully matched. There are also the group capturing commands <code class="bytecode">start</code> and
-    <code class="bytecode">end</code>, but we leave off discussion of those until we extend Playspecs with
-    <a href="interpreter.html#subgroups">subgroup capture</a>. The compilation strategy is detailed in the table below.
-</p>
+    <code class="bytecode">end</code> and the intersection operator <code>^</code>, but we leave off discussion of those
+    until we extend Playspecs with <a href="interpreter.html#subgroups">subgroup capture</a> and
+    <a href="#intersection">intersection</a> respectively. The compilation strategy is detailed in the table below.</p>
 
 <table>
     <tr>
@@ -379,5 +380,311 @@
         ex(stringProgram, expectedStringProgram);
     });
 </script>
+
+<h1>Compilation via Finite Automata</h1>
+
+<p>The approach above directly follows Cox, implicitly defining an automaton and immediately compiling it to bytecodes.
+    This automaton is somewhat like a control flow graph, where nodes indicate operations like checking a predicate
+    against the current trace state or splitting to explore multiple options. While this technique is efficient and
+    easy to explain, there are two issues of expressiveness: first, subgroup capture and greedy versus non-greedy
+    matching are grafted in during the compilation step but have no automata-theoretic representation; and second,
+    because we never have an explicit automaton, we cannot use automata intersection to handle Playspec intersection
+    (we would need to extend the virtual machine with extra thread data and bookkeeping). The second case is much
+    more problematic, so it's worth trading some compiler complexity for a simpler interpreter.</p>
+
+<p>To keep the efficiency benefits of the straightforward approach described earlier, we only create explicit automata
+    when trying to compile an intersection in the course of compiling a Playspec. Roughly, the Playspecs on each side of
+    the intersection are separately transformed into symbolic finite automata, these are intersected using the technique
+    described by <a href="http://research.microsoft.com/pubs/133121/MSR-TR-2010-90.pdf">Hooimeijer and Veanes</a>. The
+    resulting automata is finally compiled to the same bytecodes described above, though using a different code
+    generator. Because arbitrary Playspecs may appear inside of intersections, the transformation to finite automata
+    must handle the whole Playspecs language (including, of course, nested intersections, which are handled as just
+    described except that code is not immediately generated). These automata have ordered edges to account for greedy
+    vs reluctant matches, and edge labels include both game-specific predicates and capture group beginnings and
+    endings. Note that all the edges below except the one in the very first example are &#949;-transitions.</p>
+
+<table>
+    <tr>
+        <td>Formula</td>
+        <td>NFA Fragment</td>
+    </tr>
+    <tr>
+        <td>Propositional formula <code>F</code></td>
+        <td class="diagram">
+            digraph g {
+              rankdir=LR;
+              in -> out [label = "check F"];
+            }
+        </td>
+    </tr>
+    <tr>
+        <td><code>A,B</code></td>
+        <td class="diagram">
+            digraph g {
+              rankdir=LR;
+              in;
+              subgraph cluster_a {
+                label="A"
+                style=stroked;
+                color=black;
+                outA[label="outA"]
+                inA -> outA [style=dashed];
+              };
+              subgraph cluster_b {
+                label="B"
+                style=stroked;
+                color=black;
+                outB[label="outB"]
+                inB -> outB [style=dashed];
+              }
+              in -> inA;
+              outA -> inB;
+              outB -> out;
+            }
+        </td>
+    </tr>
+    <tr>
+        <td><code>A;B</code></td>
+        <td class="diagram">
+            digraph g {
+              rankdir=LR;
+              in;
+              subgraph cluster_a {
+                label="A"
+                style=stroked;
+                color=black;
+                outA[label="outA"]
+                inA -> outA [style=dashed];
+              };
+              subgraph cluster_b {
+                label="B"
+                style=stroked;
+                color=black;
+                outB[label="outB"]
+                inB -> outB [style=dashed];
+              }
+              in -> inA [taillabel=1];
+              in -> inB [taillabel=2];
+              outA -> out;
+              outB -> out;
+            }
+        </td>
+    </tr>
+    <tr>
+        <td><code>A^B</code></td>
+        <td class="diagram">
+            digraph g {
+              rankdir=LR;
+              subgraph cluster_axb {
+                label="A &#x2A2F; B"
+                style=stroked;
+                color=black;
+                inAxB[label="inA &#x2A2F; inB"]
+                outAxB[label="outA &#x2A2F; outB"]
+                inAxB -> outAxB [style=dashed];
+              };
+              in -> inAxB;
+              outAxB -> out;
+            }
+        </td>
+    </tr>
+    <tr>
+        <td><code>A ...</code></td>
+        <td class="diagram">
+            digraph g {
+              rankdir=LR
+              subgraph cluster_a {
+                label="A"
+                inA
+                outA[label="outA"]
+                inA -> outA [style=dashed]
+              }
+              in -> inA:w
+              outA:e -> inA:w [taillabel="1"; labelangle=45; labeldistance=1.75]
+              outA:e -> out [taillabel="2"; labelangle=-45; labeldistance=1.75]
+            }
+        </td>
+    </tr>
+    <tr>
+        <td><code>A M...</code></td>
+        <td class="diagram">
+            digraph g {
+              rankdir=LR
+              in
+              subgraph cluster_am {
+                label="A (M times)"
+                a1 [shape=square; label="A"]
+                mdots [shape=plaintext; label="..."]
+                a2 [shape=square; label="A"]
+                a1 -> mdots -> a2
+              }
+              in -> a1
+              subgraph cluster_a {
+                label="A"
+                inA
+                outA[label="outA"]
+                inA -> outA [style=dashed]
+              }
+              a2:e -> inA:w [taillabel="1"; labelangle=45; labeldistance=1.75]
+              a2:e -> out [taillabel="2"; labelangle=-45; labeldistance=1.75]
+              outA:e -> inA:w [taillabel="1"; labelangle=45; labeldistance=1.75]
+              outA:e -> out [taillabel="2"; labelangle=-45; labeldistance=1.75]
+            }
+        </td>
+    </tr>
+    <tr>
+        <td><code>A M...N</code></td>
+        <td class="diagram">
+            digraph g {
+              rankdir=LR
+              in
+              subgraph cluster_am {
+                label="A (M times)"
+                a1m [shape=square; label="A"]
+                mdots [shape=plaintext; label="..."]
+                a2m [shape=square; label="A"]
+                a1m -> mdots -> a2m
+              }
+              in -> a1m
+              subgraph cluster_an {
+                label="A (M - N times)"
+                a1n [shape=square; label="A"]
+                ndots [shape=plaintext; label="..."]
+                a2n [shape=square; label="A"]
+                a1n -> ndots -> a2n [taillabel="1"; labelangle=45]
+              }
+              a2m -> a1n
+              a1n -> out [taillabel="2"; labeldistance=1.75]
+              ndots -> out [taillabel=2; labeldistance=1.75]
+              a2n -> out
+            }
+        </td>
+    </tr>
+    <tr>
+        <td><code>A ..</code></td>
+        <td class="diagram">
+            digraph g {
+              rankdir=LR
+              subgraph cluster_a {
+                label="A"
+                inA
+                outA[label="outA"]
+                inA -> outA [style=dashed]
+              }
+              in -> inA:w
+              outA:e -> inA:w [taillabel=2; labelangle=45; labeldistance=1.75]
+              outA:e -> out [taillabel=1; labelangle=-45; labeldistance=1.75]
+            }
+        </td>
+    </tr>
+    <tr>
+        <td><code>A M..</code></td>
+        <td class="diagram">
+            digraph g {
+              rankdir=LR
+              in
+              subgraph cluster_am {
+                label="A (M times)"
+                a1 [shape=square; label="A"]
+                mdots [shape=plaintext; label="..."]
+                a2 [shape=square; label="A"]
+                a1 -> mdots -> a2
+              }
+              in -> a1
+              subgraph cluster_a {
+                label="A"
+                inA
+                outA[label="outA"]
+                inA -> outA [style=dashed]
+              }
+              a2:e -> inA [taillabel=2; labelangle=45; labeldistance=1.75]
+              a2:e -> out [taillabel=1; labelangle=-45; labeldistance=1.75]
+              outA:e -> inA:w [taillabel=2; labelangle=45; labeldistance=1.75]
+              outA:e -> out [taillabel=1; labelangle=-45; labeldistance=1.75]
+            }
+        </td>
+    </tr>
+    <tr>
+        <td><code>A M..N</code></td>
+        <td class="diagram">
+            digraph g {
+              rankdir=LR
+              in
+              subgraph cluster_am {
+                label="A (M times)"
+                a1m [shape=square; label="A"]
+                mdots [shape=plaintext; label="..."]
+                a2m [shape=square; label="A"]
+                a1m -> mdots -> a2m
+              }
+              in -> a1m
+              subgraph cluster_an {
+                label="A (M - N times)"
+                a1n [shape=square; label="A"]
+                ndots [shape=plaintext; label="..."]
+                a2n [shape=square; label="A"]
+                a1n -> ndots -> a2n [taillabel=2; labelangle=45]
+              }
+              a2m -> a1n
+              a1n -> out [taillabel=1; labeldistance=1.75]
+              ndots -> out [taillabel=1; labeldistance=1.75]
+              a2n -> out
+            }
+        </td>
+    </tr>
+    <tr>
+        <td><code>$cap(A)</code></td>
+        <td class="diagram">
+            digraph g {
+              rankdir=LR
+              in
+              subgraph cluster_a {
+                label="A"
+                inA -> outA [style=dashed]
+              }
+              in -> inA [label="start-capture 'cap'"]
+              outA -> out [label="end-capture 'cap'"]
+            }
+        </td>
+    </tr>
+    <tr>
+        <td>(end of Playspec P)</td>
+        <td class="diagram">
+            digraph g {
+              rankdir=LR;
+              subgraph cluster_p {
+                label="P"
+                style=stroked;
+                color=black;
+                inP[label="inP"]
+                outP[label="outP"]
+                inP -> outP [style=dashed];
+              }
+              in -> inP
+              outP -> out
+              in[shape=point]
+              out[shape=doublecircle]
+            }
+        </td>
+    </tr>
+</table>
+
+<p>In the examples above, every formula has its own <code>in</code> and <code>out</code> nodes. In practice, the state
+    machine is grown outwards from the start node with each bit of Playspec syntax adding edges and new nodes. In other
+    words, compiling a single piece of Playspec syntax to an automaton uses an existing state as <code>in</code> and
+    adds a new state for <code>out</code>, which will then be used as the next piece of syntax's <code>in</code>. Once
+    the whole Playspec has been compiled in this way, any <code>out</code> which has not been used as an <code>in</code>
+    is marked as an accepting state (i.e. a jump to the terminal <code class="bytecode">match</code> instruction in VM
+    terms). This is all done to keep the state machine small and minimize the number of intermediate states and
+    transitions.</p>
+
+<p>About how epsilon elimination is adapted with the edge ordering and the start-capture and end-capture labels.</p>
+
+<p>About the automata product and how it's adapted with the edge ordering and the start-capture and end-capture labels.
+    Also, about how much of the edge label intersection we can do without knowledge of the game, and possible future
+    hooks for game makers.</p>
+
+<p>About compiling automata to vm instructions.</p>
+
 </body>
 </html>

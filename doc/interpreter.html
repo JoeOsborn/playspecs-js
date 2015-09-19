@@ -12,7 +12,7 @@
 <p>In this document, we will show an end-to-end use of Playspecs. We introduce a new "game" whose states are letters,
     showing how custom predicates are incorporated as atomic formulae. Then we explain the virtual machine approach to
     Playspec checking, following <a href="https://swtch.com/~rsc/regexp/regexp2.html">Russ Cox</a>. Finally, we explore
-    the addition of advanced features like subgroup matching and intersection.</p>
+    the addition of subgroup matching to the basic interpreter.</p>
 
 <p>For the purposes of this document, we'll introduce another domain for Playspecs: a hypothetical game whose moves are
     all represented by single upper- and lowercase letters. Reasonable questions to ask about states of this game
@@ -191,11 +191,11 @@
     priority than the duplicated thread, since threads are advanced in priority order. For Cox's requirements, it
     suffices to discard duplicates (since he only wants to know whether there is any match, and in a pinch its beginning
     and end). For Playspecs, we actually want to return all matches so we must merge rather than discard the duplicate
-    threads. This distinction will become important when we consider subgroup matching later on. Keeping all matches
-    (and using additional thread state, which we need to do for Playspec intersection) leads to some overhead,
-    especially for duplicate detection<sup><a href="#footnote-1" id="ref-1">1</a></sup>. The upshot is that we separate
-    the queue of scheduled processes from the set of processes which exist in that queue, since we want to avoid linear
-    scans over the queue when doing duplicate checking.</p>
+    threads. This distinction will become important when we consider subgroup capture later on. Keeping all matches
+    could lead to some overhead, but this is mitigated since we do not consider the captures when determining whether
+    one thread is a duplicate of another<sup><a href="#footnote-1" id="ref-1">1</a></sup>. The upshot is that we
+    separate the queue of scheduled processes from the set of processes which exist in that queue, since we want to
+    avoid linear scans over the queue when doing duplicate checking.</p>
 
 <p>Some more words on priority: like Cox's implementation, the right side of a split is scheduled at a lower priority
     than the left side. No other instruction (except our <code class="bytecode">fork</code>, to be introduced later)
@@ -223,30 +223,19 @@
         <p><a id="footnote-1" href="#ref-1">1.</a> Cox gives each program instruction the string index at
             which it was last activated, indicating instantly whether another thread is currently parked at that
             instruction. This effectively double-purposes the program as the set of current threads, but this approach
-            grows in complexity as more thread state is introduced (e.g. for intersection, existential or universal
+            grows in complexity as more thread state is introduced (e.g. for existential or universal
             quantification, possibly for lookaround, and so on). More importantly, we need to track the actual
-            pre-existing threads in order to merge threads, and providing instructions with pointers (or, as thread
-            equivalence becomes more complex, collections of pointers) to threads opens up issues of garbage collection,
-            et cetera in the JavaScript implementation. Finally, for Playspec intersection we need to track additional
-            sets of active threads to get the fork/join semantics we desire. Since we are already committing to
-            implementing external sets of threads, we may as well use the same code for the live thread set, for
-            simplicity. Unfortunately, we also can't avoid creating a thread duplicating one we've already seen on the
-            current trace state: because the merge might merge data that comes from steps subsequent to the duplicate
-            detection, we can only do duplicate checking and merging of "stuck" threads.</p>
+            pre-existing threads in order to merge threads, and providing instructions with pointers to threads (or, as
+            thread equivalence becomes more complex, collections of pointers) opens up issues of garbage collection and
+            the like in the JavaScript implementation. Unfortunately, this means we can't avoid creating a thread
+            duplicating one we've already seen on the current trace state; we can merely avoid scheduling it. This is
+            because the merging of two threads might combine data that comes from interpretation steps subsequent to the
+            duplicate detection, so we can only do duplicate checking and merging of "stuck" threads.</p>
     </div>
 </div>
 
 
-<h2>Some enhancements</h2>
-
-<p>Adding new features to this Playspecs implementation mainly involves devising new parse tokens and gadgets, sometimes
-    requiring new VM instructions and new thread state (in some cases, extending the notions of thread equivalence and
-    thread merging). We now show two substantial enhancements, intersection and subgroup matching. These two features
-    interact in significant ways that strongly influence their design, so some decisions made in pursuit of intersection
-    may seem a little strange at first&mdash;but they seem to be necessary for efficiently combining both intersection
-    and subgroup matching.</p>
-
-<h3 id="subgroups">Subgroup Capture</h3>
+<h2 id="subgroups">Subgroup Capture</h2>
 
 <p>The interpreter described so far only has enough information about the match to yield its ending position, not its
     starting one&mdash;recall that every match is anchored to the first character! In fact, it implicitly uses the
@@ -334,30 +323,6 @@
         ex(oneMatch.subgroups[0].states.join(""), "A");
     });
 </script>
-
-<h3>Intersection</h3>
-
-<p>In an explicitly automata-based regular expression engine, an intersection operator could be obtained by
-    calculating NFA representations of the two operands, determinizing those, and intersecting them. This could lead
-    to a blowup in the size of the resulting automaton. For our purposes, and because we want to stay in the virtual
-    machine framework, we introduce a kind of fork/join semantics which is extremely constrained: for certain threads we
-    have a different acceptance condition besides reaching a <code class="bytecode">match</code> instruction, and this
-    corresponds to the "both sides finish at the same time" semantics we give to intersection. Complications include the
-    fact that intersections can be arbitrarily sequenced and nested, and that we want to keep all subgroup matches
-    occurring before <em>and within each branch</em> of the intersection.</p>
-
-<p>Consequently, we're forced to maintain for each thread a stack of the intersections in which it's embedded, where
-    each intersection is recorded as a fork index (the <em>k</em>th fork instruction has index <em>k</em>) and the
-    starting index in the trace (recall that both sides of an intersection must consume the same amount of trace). Only
-    traces with the same stack entries may be joined (in case they match at the same time) or merged (in case they
-    duplicate equivalent traces <em>on the same side of the intersection</em>). To find joined pairs without scanning
-    the whole instruction queue, we keep a separate join-set which is keyed on both stack data (so traces corresponding
-    to different intersections or starting at different positions can't be joined) and left/right side (so e.g. two
-    left-operands of an intersection that match simultaneously can't join together, but can be easily merged). As an
-    optimization, we also keep a liveness-set which records if a thread is live on one side or the other of an
-    intersection with a given fork key. If only one side of a given fork key has active threads then it is terminated
-    (since the other side has no threads, it was not possible to match it, so any more effort spent matching the first
-    side is wasted).</p>
 
 
 </body>

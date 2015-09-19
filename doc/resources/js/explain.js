@@ -116,3 +116,11 @@ function ex(v1, v2) {
     }
     exResults.push(result);
 }
+
+document.addEventListener("DOMContentLoaded", function(_e) {
+    var elts = document.getElementsByClassName("diagram");
+    for(var i = 0; i < elts.length; i++) {
+        var elt = elts[i];
+        elt.innerHTML = Viz(elt.textContent);
+    }
+});

@@ -392,16 +392,23 @@
     (we would need to extend the virtual machine with extra thread data and bookkeeping). The second case is much
     more problematic, so it's worth trading some compiler complexity for a simpler interpreter.</p>
 
+<p>This section covers four algorithms at varying levels of abstraction, and with many references to conventional
+    techniques for generating NFAs from regular expressions or to standard algorithms over SFAs. The source code in
+    <code>compiler.js</code> and <code>sfa.js</code> is the best reference, and I have tried to hew as close as
+    possible to a schematic implementation (and to the discussion below).</p>
+
 <p>To keep the efficiency benefits of the straightforward approach described earlier, we only create explicit automata
-    when trying to compile an intersection in the course of compiling a Playspec. Roughly, the Playspecs on each side of
-    the intersection are separately transformed into symbolic finite automata, these are intersected using the technique
-    described by <a href="http://research.microsoft.com/pubs/133121/MSR-TR-2010-90.pdf">Hooimeijer and Veanes</a>. The
-    resulting automata is finally compiled to the same bytecodes described above, though using a different code
-    generator. Because arbitrary Playspecs may appear inside of intersections, the transformation to finite automata
-    must handle the whole Playspecs language (including, of course, nested intersections, which are handled as just
-    described except that code is not immediately generated). These automata have ordered edges to account for greedy
-    vs reluctant matches, and edge labels include both game-specific predicates and capture group beginnings and
-    endings. Note that all the edges below except the one in the very first example are &#949;-transitions.</p>
+    when trying to compile an intersection in the course of compiling a Playspec (future work should compare the
+    time and space usage of the two techniques and perhaps commit only to the SFA approach if it is by some chance
+    superior). Roughly, the Playspecs on each side of the intersection are separately transformed into symbolic finite
+    automata, these are intersected using the technique described by
+    <a href="http://research.microsoft.com/pubs/133121/MSR-TR-2010-90.pdf">Hooimeijer and Veanes</a>. The resulting
+    automaton is finally compiled to the same bytecodes described above, though using a different code generator.
+    Because arbitrary Playspecs may appear inside of intersections, the transformation to finite automata must handle
+    the whole Playspecs language (including, of course, nested intersections, which are handled as just described except
+    that code is not immediately generated). These automata have ordered edges to account for greedy vs reluctant
+    matches, and edge labels include both game-specific predicates and capture group beginnings and endings. Note that
+    all the edges below except the one in the very first example are &#949;-transitions.</p>
 
 <table>
     <tr>
@@ -476,11 +483,11 @@
             digraph g {
               rankdir=LR;
               subgraph cluster_axb {
-                label="A &#x2A2F; B"
+                label="&#949;-elim(A) &#x2A2F; &#949;-elim(B)"
                 style=stroked;
                 color=black;
                 inAxB[label="inA &#x2A2F; inB"]
-                outAxB[label="outA &#x2A2F; outB"]
+                outAxB[label="outA* &#x2A2F; outB*"]
                 inAxB -> outAxB [style=dashed];
               };
               in -> inAxB;
@@ -672,19 +679,64 @@
 <p>In the examples above, every formula has its own <code>in</code> and <code>out</code> nodes. In practice, the state
     machine is grown outwards from the start node with each bit of Playspec syntax adding edges and new nodes. In other
     words, compiling a single piece of Playspec syntax to an automaton uses an existing state as <code>in</code> and
-    adds a new state for <code>out</code>, which will then be used as the next piece of syntax's <code>in</code>. Once
-    the whole Playspec has been compiled in this way, any <code>out</code> which has not been used as an <code>in</code>
-    is marked as an accepting state (i.e. a jump to the terminal <code class="bytecode">match</code> instruction in VM
-    terms). This is all done to keep the state machine small and minimize the number of intermediate states and
-    transitions.</p>
+    emits edges pointing towards an <code>out</code> which is provided by the external caller; this will be used as the
+    next piece of syntax's <code>in</code>. Once the whole Playspec has been compiled in this way, the final set of
+    <code>out</code> edges are pointed to a fresh terminal state (i.e. a jump to the terminal
+    <code class="bytecode">match</code> instruction in VM terms). This is all done to keep the state machine small and
+    minimize the number of intermediate states and transitions.</p>
 
-<p>About how epsilon elimination is adapted with the edge ordering and the start-capture and end-capture labels.</p>
+<p>Except for intersections, all of a Playspec's accepting paths will lead into a single accepting state via
+    &#949;-transitions. A Playspec which preferentially accepts over trying to match more of the trace (or vice versa)
+    expresses this priority via the ordering of edges. Unfortunately, algorithms for intersecting two symbolic finite
+    automata require the elimination of &#949;-transitions. This risks losing the vital ordering information as well as
+    the edge labels that terminate capture groups, so we must adapt &#949;-elimination and SFA intersection in three
+    ways.</p>
 
-<p>About the automata product and how it's adapted with the edge ordering and the start-capture and end-capture labels.
-    Also, about how much of the edge label intersection we can do without knowledge of the game, and possible future
-    hooks for game makers.</p>
+<p>First, every accepting state gets an &#949;-transition to itself. We call this a "terminating self
+    &#949;-transition," which means simply an &#949;-transition from an accepting state to itself, which would otherwise
+    be redundant. During &#949;-elimination, these transitions are not removed, but propagated to each state which can
+    reach an accepting state via &#949;-transitions. Since edges of more remote states are propagated backwards through
+    edges of closer states, this effectively maintains a depth-first ordering of edges including the terminating self
+    &#949;-transitions. As edges are propagated backwards, their labels are prepended with the label of the edge by
+    which they were reached. In this way, every state does a depth-first traversal along &#949;-transitions to pull back
+    the edges of the &#949;-closure of states in the correct order.</p>
 
-<p>About compiling automata to vm instructions.</p>
+<p>Second, the conventional algorithm for intersection must be modified to recognize this special kind of
+    &#949;-transition. The main change here is, when iterating over the edges of a state A from the left automaton and a
+    state B from the right automaton, to skip the main body of the loop when only one or the other edge is a terminating
+    self &#949;-transition; if both are such a transition, then add a terminating self &#949;-transition to the
+    originating state and mark it as terminal. As for the labels, the labels of the edge of A are prepended to the
+    labels of the edge of B, and the resulting list is the label for the new edge. The edge ordering falls out of the
+    sequence in which edges are processed (iterating over those of A on the outside and those of B on the inside).
+    Whereas the usual algorithm for intersection requires theory-specific intersection of edge formulae, we must rely on
+    the game in question to tell us whether the formulae conflict or, if not, what their intersection is. In the absence
+    of this information we will create spurious transitions and potentially spurious states.</p>
+
+<p>Third, the SFA resulting from intersection has its terminating self &#949;-transitions replaced with
+    &#949;-transitions to a fresh accepting state (keeping the same labels, effectively just changing the target of
+    these intersections). This means that the SFA returned from the intersection algorithm has &#949;-transitions only
+    to a single accepting state, and the terminating self &#949;-transitions are gone.</p>
+
+<p>Finally, once we have an automaton in hand we can compile it to bytecodes. This follows the rough outline of the
+    usual bytecode generation, except that instead of processing a syntax tree we must process a graph of states
+    connected by edges. The recursive algorithm maintains a dictionary mapping visited states to jump targets as well as
+    a set of the jump-past-end-of-machine instructions which are generated from &#949;-transitions to the terminal state
+    of the machine (note that these are not necessarily terminal states of the overarching Playspec into which this
+    machine is being planted). Since we know a priori that the SFA in question came from an SFA intersection operation,
+    we know that the only &#949;-transitions are to a single accepting node (if this were not known, we could always
+    perform &#949;-elimination and re-point the terminating self &#949;-transitions to make it so).</p>
+
+<p>The algorithm recurses in a depth-first fashion, avoiding cycles. Nodes with no transitions should never appear
+    (except for the single accepting node). Nodes with one transition are compiled along their single transition. Nodes
+    with more than one transition are compiled first with a split, then the result of compiling their first edge; then,
+    if the node has more than two transitions, another split and then the result of compiling the second edge
+    (otherwise, just the result of compiling the second edge); and so on.</p>
+
+<p>Compiling an edge has three cases. In all three, first the bytecodes corresponding to the edge's label and formula
+    are inserted. The first case is when the edge points to the terminal accepting state; here, a jump to an unknown
+    target is appended and the jump is added to the set of jump-past-end-of-machine instructions. Second, if the edge
+    points to an already-visited state, a jump to that state's known start location is added. Finally, if the target
+    state is not yet visited, its code is generated immediately after the edge's label and formula bytecodes.</p>
 
 </body>
 </html>

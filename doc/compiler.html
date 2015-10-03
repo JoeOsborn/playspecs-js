@@ -340,7 +340,7 @@
             }
         ]);
         // We can also ask the compiler to stringify the VM code for easier reading.
-        var stringProgram = compiler.stringify(program);
+        var stringProgram = Playspecs.Compiler.stringify(program);
         ex(stringProgram, expectedStringProgram);
     });
     var parser = new Playspecs.Parser.Parser(promWeek);
@@ -376,7 +376,7 @@
             "be labeled with the character range where the condition appears in the original spec.</p>", function () {
         var parseTree = parser.parse("3...5, (false ..2 ; true, false, true) ...").tree;
         var program = compiler.compile(parseTree, true);
-        var stringProgram = compiler.stringify(program);
+        var stringProgram = Playspecs.Compiler.stringify(program);
         ex(stringProgram, expectedStringProgram);
     });
 </script>
@@ -419,8 +419,8 @@
         <td>Propositional formula <code>F</code></td>
         <td class="diagram">
             digraph g {
-              rankdir=LR;
-              in -> out [label = "check F"];
+            rankdir=LR;
+            in -> out [label = "check F"];
             }
         </td>
     </tr>
@@ -428,25 +428,25 @@
         <td><code>A,B</code></td>
         <td class="diagram">
             digraph g {
-              rankdir=LR;
-              in;
-              subgraph cluster_a {
-                label="A"
-                style=stroked;
-                color=black;
-                outA[label="outA"]
-                inA -> outA [style=dashed];
-              };
-              subgraph cluster_b {
-                label="B"
-                style=stroked;
-                color=black;
-                outB[label="outB"]
-                inB -> outB [style=dashed];
-              }
-              in -> inA;
-              outA -> inB;
-              outB -> out;
+            rankdir=LR;
+            in;
+            subgraph cluster_a {
+            label="A"
+            style=solid;
+            color=black;
+            outA[label="outA"]
+            inA -> outA [style=dashed];
+            };
+            subgraph cluster_b {
+            label="B"
+            style=solid;
+            color=black;
+            outB[label="outB"]
+            inB -> outB [style=dashed];
+            }
+            in -> inA;
+            outA -> inB;
+            outB -> out;
             }
         </td>
     </tr>
@@ -454,26 +454,26 @@
         <td><code>A;B</code></td>
         <td class="diagram">
             digraph g {
-              rankdir=LR;
-              in;
-              subgraph cluster_a {
-                label="A"
-                style=stroked;
-                color=black;
-                outA[label="outA"]
-                inA -> outA [style=dashed];
-              };
-              subgraph cluster_b {
-                label="B"
-                style=stroked;
-                color=black;
-                outB[label="outB"]
-                inB -> outB [style=dashed];
-              }
-              in -> inA [taillabel=1];
-              in -> inB [taillabel=2];
-              outA -> out;
-              outB -> out;
+            rankdir=LR;
+            in;
+            subgraph cluster_a {
+            label="A"
+            style=solid;
+            color=black;
+            outA[label="outA"]
+            inA -> outA [style=dashed];
+            };
+            subgraph cluster_b {
+            label="B"
+            style=solid;
+            color=black;
+            outB[label="outB"]
+            inB -> outB [style=dashed];
+            }
+            in -> inA [taillabel=1];
+            in -> inB [taillabel=2];
+            outA -> out;
+            outB -> out;
             }
         </td>
     </tr>
@@ -481,17 +481,17 @@
         <td><code>A^B</code></td>
         <td class="diagram">
             digraph g {
-              rankdir=LR;
-              subgraph cluster_axb {
-                label="&#949;-elim(A) &#x2A2F; &#949;-elim(B)"
-                style=stroked;
-                color=black;
-                inAxB[label="inA &#x2A2F; inB"]
-                outAxB[label="outA* &#x2A2F; outB*"]
-                inAxB -> outAxB [style=dashed];
-              };
-              in -> inAxB;
-              outAxB -> out;
+            rankdir=LR;
+            subgraph cluster_axb {
+            label="&#949;-elim(A) &#x2A2F; &#949;-elim(B)"
+            style=solid;
+            color=black;
+            inAxB[label="inA &#x2A2F; inB"]
+            outAxB[label="outA* &#x2A2F; outB*"]
+            inAxB -> outAxB [style=dashed];
+            };
+            in -> inAxB;
+            outAxB -> out;
             }
         </td>
     </tr>
@@ -499,16 +499,16 @@
         <td><code>A ...</code></td>
         <td class="diagram">
             digraph g {
-              rankdir=LR
-              subgraph cluster_a {
-                label="A"
-                inA
-                outA[label="outA"]
-                inA -> outA [style=dashed]
-              }
-              in -> inA:w
-              outA:e -> inA:w [taillabel="1"; labelangle=45; labeldistance=1.75]
-              outA:e -> out [taillabel="2"; labelangle=-45; labeldistance=1.75]
+            rankdir=LR
+            subgraph cluster_a {
+            label="A"
+            inA
+            outA[label="outA"]
+            inA -> outA [style=dashed]
+            }
+            in -> inA:w
+            outA:e -> inA:w [taillabel="1"; labelangle=45; labeldistance=1.75]
+            outA:e -> out [taillabel="2"; labelangle=-45; labeldistance=1.75]
             }
         </td>
     </tr>
@@ -516,26 +516,26 @@
         <td><code>A M...</code></td>
         <td class="diagram">
             digraph g {
-              rankdir=LR
-              in
-              subgraph cluster_am {
-                label="A (M times)"
-                a1 [shape=square; label="A"]
-                mdots [shape=plaintext; label="..."]
-                a2 [shape=square; label="A"]
-                a1 -> mdots -> a2
-              }
-              in -> a1
-              subgraph cluster_a {
-                label="A"
-                inA
-                outA[label="outA"]
-                inA -> outA [style=dashed]
-              }
-              a2:e -> inA:w [taillabel="1"; labelangle=45; labeldistance=1.75]
-              a2:e -> out [taillabel="2"; labelangle=-45; labeldistance=1.75]
-              outA:e -> inA:w [taillabel="1"; labelangle=45; labeldistance=1.75]
-              outA:e -> out [taillabel="2"; labelangle=-45; labeldistance=1.75]
+            rankdir=LR
+            in
+            subgraph cluster_am {
+            label="A (M times)"
+            a1 [shape=square; label="A"]
+            mdots [shape=plaintext; label="..."]
+            a2 [shape=square; label="A"]
+            a1 -> mdots -> a2
+            }
+            in -> a1
+            subgraph cluster_a {
+            label="A"
+            inA
+            outA[label="outA"]
+            inA -> outA [style=dashed]
+            }
+            a2:e -> inA:w [taillabel="1"; labelangle=45; labeldistance=1.75]
+            a2:e -> out [taillabel="2"; labelangle=-45; labeldistance=1.75]
+            outA:e -> inA:w [taillabel="1"; labelangle=45; labeldistance=1.75]
+            outA:e -> out [taillabel="2"; labelangle=-45; labeldistance=1.75]
             }
         </td>
     </tr>
@@ -543,27 +543,27 @@
         <td><code>A M...N</code></td>
         <td class="diagram">
             digraph g {
-              rankdir=LR
-              in
-              subgraph cluster_am {
-                label="A (M times)"
-                a1m [shape=square; label="A"]
-                mdots [shape=plaintext; label="..."]
-                a2m [shape=square; label="A"]
-                a1m -> mdots -> a2m
-              }
-              in -> a1m
-              subgraph cluster_an {
-                label="A (M - N times)"
-                a1n [shape=square; label="A"]
-                ndots [shape=plaintext; label="..."]
-                a2n [shape=square; label="A"]
-                a1n -> ndots -> a2n [taillabel="1"; labelangle=45]
-              }
-              a2m -> a1n
-              a1n -> out [taillabel="2"; labeldistance=1.75]
-              ndots -> out [taillabel=2; labeldistance=1.75]
-              a2n -> out
+            rankdir=LR
+            in
+            subgraph cluster_am {
+            label="A (M times)"
+            a1m [shape=square; label="A"]
+            mdots [shape=plaintext; label="..."]
+            a2m [shape=square; label="A"]
+            a1m -> mdots -> a2m
+            }
+            in -> a1m
+            subgraph cluster_an {
+            label="A (M - N times)"
+            a1n [shape=square; label="A"]
+            ndots [shape=plaintext; label="..."]
+            a2n [shape=square; label="A"]
+            a1n -> ndots -> a2n [taillabel="1"; labelangle=45]
+            }
+            a2m -> a1n
+            a1n -> out [taillabel="2"; labeldistance=1.75]
+            ndots -> out [taillabel=2; labeldistance=1.75]
+            a2n -> out
             }
         </td>
     </tr>
@@ -571,16 +571,16 @@
         <td><code>A ..</code></td>
         <td class="diagram">
             digraph g {
-              rankdir=LR
-              subgraph cluster_a {
-                label="A"
-                inA
-                outA[label="outA"]
-                inA -> outA [style=dashed]
-              }
-              in -> inA:w
-              outA:e -> inA:w [taillabel=2; labelangle=45; labeldistance=1.75]
-              outA:e -> out [taillabel=1; labelangle=-45; labeldistance=1.75]
+            rankdir=LR
+            subgraph cluster_a {
+            label="A"
+            inA
+            outA[label="outA"]
+            inA -> outA [style=dashed]
+            }
+            in -> inA:w
+            outA:e -> inA:w [taillabel=2; labelangle=45; labeldistance=1.75]
+            outA:e -> out [taillabel=1; labelangle=-45; labeldistance=1.75]
             }
         </td>
     </tr>
@@ -588,26 +588,26 @@
         <td><code>A M..</code></td>
         <td class="diagram">
             digraph g {
-              rankdir=LR
-              in
-              subgraph cluster_am {
-                label="A (M times)"
-                a1 [shape=square; label="A"]
-                mdots [shape=plaintext; label="..."]
-                a2 [shape=square; label="A"]
-                a1 -> mdots -> a2
-              }
-              in -> a1
-              subgraph cluster_a {
-                label="A"
-                inA
-                outA[label="outA"]
-                inA -> outA [style=dashed]
-              }
-              a2:e -> inA [taillabel=2; labelangle=45; labeldistance=1.75]
-              a2:e -> out [taillabel=1; labelangle=-45; labeldistance=1.75]
-              outA:e -> inA:w [taillabel=2; labelangle=45; labeldistance=1.75]
-              outA:e -> out [taillabel=1; labelangle=-45; labeldistance=1.75]
+            rankdir=LR
+            in
+            subgraph cluster_am {
+            label="A (M times)"
+            a1 [shape=square; label="A"]
+            mdots [shape=plaintext; label="..."]
+            a2 [shape=square; label="A"]
+            a1 -> mdots -> a2
+            }
+            in -> a1
+            subgraph cluster_a {
+            label="A"
+            inA
+            outA[label="outA"]
+            inA -> outA [style=dashed]
+            }
+            a2:e -> inA [taillabel=2; labelangle=45; labeldistance=1.75]
+            a2:e -> out [taillabel=1; labelangle=-45; labeldistance=1.75]
+            outA:e -> inA:w [taillabel=2; labelangle=45; labeldistance=1.75]
+            outA:e -> out [taillabel=1; labelangle=-45; labeldistance=1.75]
             }
         </td>
     </tr>
@@ -615,27 +615,27 @@
         <td><code>A M..N</code></td>
         <td class="diagram">
             digraph g {
-              rankdir=LR
-              in
-              subgraph cluster_am {
-                label="A (M times)"
-                a1m [shape=square; label="A"]
-                mdots [shape=plaintext; label="..."]
-                a2m [shape=square; label="A"]
-                a1m -> mdots -> a2m
-              }
-              in -> a1m
-              subgraph cluster_an {
-                label="A (M - N times)"
-                a1n [shape=square; label="A"]
-                ndots [shape=plaintext; label="..."]
-                a2n [shape=square; label="A"]
-                a1n -> ndots -> a2n [taillabel=2; labelangle=45]
-              }
-              a2m -> a1n
-              a1n -> out [taillabel=1; labeldistance=1.75]
-              ndots -> out [taillabel=1; labeldistance=1.75]
-              a2n -> out
+            rankdir=LR
+            in
+            subgraph cluster_am {
+            label="A (M times)"
+            a1m [shape=square; label="A"]
+            mdots [shape=plaintext; label="..."]
+            a2m [shape=square; label="A"]
+            a1m -> mdots -> a2m
+            }
+            in -> a1m
+            subgraph cluster_an {
+            label="A (M - N times)"
+            a1n [shape=square; label="A"]
+            ndots [shape=plaintext; label="..."]
+            a2n [shape=square; label="A"]
+            a1n -> ndots -> a2n [taillabel=2; labelangle=45]
+            }
+            a2m -> a1n
+            a1n -> out [taillabel=1; labeldistance=1.75]
+            ndots -> out [taillabel=1; labeldistance=1.75]
+            a2n -> out
             }
         </td>
     </tr>
@@ -643,14 +643,14 @@
         <td><code>$cap(A)</code></td>
         <td class="diagram">
             digraph g {
-              rankdir=LR
-              in
-              subgraph cluster_a {
-                label="A"
-                inA -> outA [style=dashed]
-              }
-              in -> inA [label="start-capture 'cap'"]
-              outA -> out [label="end-capture 'cap'"]
+            rankdir=LR
+            in
+            subgraph cluster_a {
+            label="A"
+            inA -> outA [style=dashed]
+            }
+            in -> inA [label="start-capture 'cap'"]
+            outA -> out [label="end-capture 'cap'"]
             }
         </td>
     </tr>
@@ -658,19 +658,19 @@
         <td>(end of Playspec P)</td>
         <td class="diagram">
             digraph g {
-              rankdir=LR;
-              subgraph cluster_p {
-                label="P"
-                style=stroked;
-                color=black;
-                inP[label="inP"]
-                outP[label="outP"]
-                inP -> outP [style=dashed];
-              }
-              in -> inP
-              outP -> out
-              in[shape=point]
-              out[shape=doublecircle]
+            rankdir=LR;
+            subgraph cluster_p {
+            label="P"
+            style=solid;
+            color=black;
+            inP[label="inP"]
+            outP[label="outP"]
+            inP -> outP [style=dashed];
+            }
+            in -> inP
+            outP -> out
+            in[shape=point]
+            out[shape=doublecircle]
             }
         </td>
     </tr>
@@ -685,6 +685,42 @@
     <code class="bytecode">match</code> instruction in VM terms). This is all done to keep the state machine small and
     minimize the number of intermediate states and transitions.</p>
 
+<script>
+    desc("", function () {
+        ex(Playspecs.SFA.fromParseTree(parser.parse("start").tree).toDot(), undefined, Viz);
+        //We'll reset the state IDs each time for nicer diagrams.
+        Playspecs.SFA.resetStateID();
+        var sfa = Playspecs.SFA.fromParseTree(parser.parse("start, end").tree);
+        ex(sfa.toDot(), undefined, Viz);
+        ex(sfa.eelim().toDot(), undefined, Viz);
+        Playspecs.SFA.resetStateID();
+        sfa = Playspecs.SFA.fromParseTree(parser.parse("start, not end..., end").tree);
+        ex(sfa.toDot(), undefined, Viz);
+        ex(sfa.eelim().toDot(), undefined, Viz);
+        Playspecs.SFA.resetStateID();
+        ex(Playspecs.SFA.fromParseTree(parser.parse("start 3...").tree).toDot(), undefined, Viz);
+        Playspecs.SFA.resetStateID();
+        ex(Playspecs.SFA.fromParseTree(parser.parse("start 3...5").tree).toDot(), undefined, Viz);
+        Playspecs.SFA.resetStateID();
+        ex(Playspecs.SFA.fromParseTree(parser.parse("start ...5").tree).toDot(), undefined, Viz);
+        Playspecs.SFA.resetStateID();
+        ex(Playspecs.SFA.fromParseTree(parser.parse("(Chloe-dating-Doug..., not Chloe-dating-Doug)...").tree).toDot(), undefined, Viz);
+        Playspecs.SFA.resetStateID();
+        ex(Playspecs.SFA.fromParseTree(parser.parse("start, (Chloe-dating-Doug..., not Chloe-dating-Doug)...").tree).toDot(), undefined, Viz);
+        Playspecs.SFA.resetStateID();
+        ex(Playspecs.SFA.fromParseTree(parser.parse("start, ($(not end...) ^ $(true)...), end").tree).toDot(), undefined, Viz);
+        Playspecs.SFA.resetStateID();
+        ex(Playspecs.SFA.fromParseTree(parser.parse("$a($b(Chloe-friends-Doug...) ^ (..., Chloe-dating-Doug))").tree).toDot(), undefined, Viz);
+        Playspecs.SFA.resetStateID();
+        ex(Playspecs.SFA.fromParseTree(parser.parse("start, ($(Chloe-dating-Doug.., Chloe-enemies-Doug..) ; Chloe-friends-Doug)..").tree).toDot(), undefined, Viz);
+        Playspecs.SFA.resetStateID();
+        ex(Playspecs.SFA.fromParseTree(parser.parse("not end..., end ^ true...").tree).toDot(), undefined, Viz);
+        Playspecs.SFA.resetStateID();
+        ex(Playspecs.SFA.fromParseTree(parser.parse("start, ((Chloe-dating-Doug..., not Chloe-dating-Doug)... ^ not Chloe-enemies-Doug 3...)").tree).toDot(), undefined, Viz);
+        Playspecs.SFA.resetStateID();
+    })
+</script>
+
 <p>Except for intersections, all of a Playspec's accepting paths will lead into a single accepting state via
     &#949;-transitions. A Playspec which preferentially accepts over trying to match more of the trace (or vice versa)
     expresses this priority via the ordering of edges. Unfortunately, algorithms for intersecting two symbolic finite
@@ -692,19 +728,19 @@
     the edge labels that terminate capture groups, so we must adapt &#949;-elimination and SFA intersection in three
     ways.</p>
 
-<p>First, every accepting state gets an &#949;-transition to itself. We call this a "terminating self
+<p>First, every accepting state gets an &#949;-transition to itself. We call this an "accepting self
     &#949;-transition," which means simply an &#949;-transition from an accepting state to itself, which would otherwise
     be redundant. During &#949;-elimination, these transitions are not removed, but propagated to each state which can
     reach an accepting state via &#949;-transitions. Since edges of more remote states are propagated backwards through
-    edges of closer states, this effectively maintains a depth-first ordering of edges including the terminating self
+    edges of closer states, this effectively maintains a depth-first ordering of edges including the accepting self
     &#949;-transitions. As edges are propagated backwards, their labels are prepended with the label of the edge by
     which they were reached. In this way, every state does a depth-first traversal along &#949;-transitions to pull back
     the edges of the &#949;-closure of states in the correct order.</p>
 
 <p>Second, the conventional algorithm for intersection must be modified to recognize this special kind of
     &#949;-transition. The main change here is, when iterating over the edges of a state A from the left automaton and a
-    state B from the right automaton, to skip the main body of the loop when only one or the other edge is a terminating
-    self &#949;-transition; if both are such a transition, then add a terminating self &#949;-transition to the
+    state B from the right automaton, to skip the main body of the loop when only one or the other edge is an accepting
+    self &#949;-transition; if both are such a transition, then add an accepting self &#949;-transition to the
     originating state and mark it as terminal. As for the labels, the labels of the edge of A are prepended to the
     labels of the edge of B, and the resulting list is the label for the new edge. The edge ordering falls out of the
     sequence in which edges are processed (iterating over those of A on the outside and those of B on the inside).
@@ -712,10 +748,10 @@
     the game in question to tell us whether the formulae conflict or, if not, what their intersection is. In the absence
     of this information we will create spurious transitions and potentially spurious states.</p>
 
-<p>Third, the SFA resulting from intersection has its terminating self &#949;-transitions replaced with
+<p>Third, the SFA resulting from intersection has its accepting self &#949;-transitions replaced with
     &#949;-transitions to a fresh accepting state (keeping the same labels, effectively just changing the target of
     these intersections). This means that the SFA returned from the intersection algorithm has &#949;-transitions only
-    to a single accepting state, and the terminating self &#949;-transitions are gone.</p>
+    to a single accepting state, and the accepting self &#949;-transitions are gone.</p>
 
 <p>Finally, once we have an automaton in hand we can compile it to bytecodes. This follows the rough outline of the
     usual bytecode generation, except that instead of processing a syntax tree we must process a graph of states
@@ -724,7 +760,7 @@
     of the machine (note that these are not necessarily terminal states of the overarching Playspec into which this
     machine is being planted). Since we know a priori that the SFA in question came from an SFA intersection operation,
     we know that the only &#949;-transitions are to a single accepting node (if this were not known, we could always
-    perform &#949;-elimination and re-point the terminating self &#949;-transitions to make it so).</p>
+    perform &#949;-elimination and re-point the accepting self &#949;-transitions to make it so).</p>
 
 <p>The algorithm recurses in a depth-first fashion, avoiding cycles. Nodes with no transitions should never appear
     (except for the single accepting node). Nodes with one transition are compiled along their single transition. Nodes
@@ -737,6 +773,64 @@
     target is appended and the jump is added to the set of jump-past-end-of-machine instructions. Second, if the edge
     points to an already-visited state, a jump to that state's known start location is added. Finally, if the target
     state is not yet visited, its code is generated immediately after the edge's label and formula bytecodes.</p>
+
+<script>
+    var expectedSFAResult = "digraph g {\n"+
+            "  rankdir=LR;\n"+
+            "  0 [shape=circle];\n"+
+            "  0->1 [label=\"0:start:\"];\n"+
+            "  1 [shape=circle];\n"+
+            "  1->2 [label=\"0:&#949;:\"];\n"+
+            "  2 [shape=circle];\n"+
+            "  2->a3x6b [label=\"0:&#949;:\"];\n"+
+            "  10 [shape=circle];\n"+
+            "  10->11 [label=\"0:end:\"];\n"+
+            "  11 [shape=doublecircle];\n"+
+            "  11->11 [label=\"0:&#949;:\"];\n"+
+            "  a3x6b [shape=circle];\n"+
+            "  a3x6b->10 [label=\"0:&#949;:\"];\n"+
+            "  a3x6b->a4x6b [label=\"1:not end & true:start-capture.4,start-capture.7,end-capture.7\"];\n"+
+            "  a3x6b->10 [label=\"2:&#949;:start-capture.4,end-capture.4\"];\n"+
+            "  a4x6b [shape=circle];\n"+
+            "  a4x6b->a4x6b [label=\"0:not end & true:start-capture.7,end-capture.7\"];\n"+
+            "  a4x6b->10 [label=\"1:&#949;:end-capture.4\"];\n"+
+            "}";
+    var expectedStringProgram = "0:split 3 1  \t\t(root)\n" +
+            "1:check true  \t\t(root)\n" +
+            "2:jump 0  \t\t(root)\n" +
+            "3:start $root (-1)  \t\t(root)\n" +
+            "4:check start\t(ch. 0-5)\n" +
+            "5:split 6 7\t\t(state \"a0x3b.0\")\n" +
+            "6:jump 22\t\t(edge \"a0x3b->a0x3b\")\n" +
+            "7:split 8 19\t\t(state \"a0x3b.1\")\n" +
+            "8:start 1 (0)\t\t(edge \"a0x3b->a1x3b\")\n" +
+            "9:start 4 (1)\t\t(edge \"a0x3b->a1x3b\")\n" +
+            "10:end 4 (1)\t\t(edge \"a0x3b->a1x3b\")\n" +
+            "11:check not end & true\t\t(edge \"a0x3b->a1x3b\")\n" +
+            "12:split 13 17\t\t(state \"a1x3b.0\")\n" +
+            "13:start 4 (2)\t\t(edge \"a1x3b->a1x3b\")\n" +
+            "14:end 4 (2)\t\t(edge \"a1x3b->a1x3b\")\n" +
+            "15:check not end & true\t\t(edge \"a1x3b->a1x3b\")\n" +
+            "16:jump 12\t\t(state \"a1x3b\")\n" +
+            "17:end 1 (0)\t\t(edge \"a1x3b->a1x3b\")\n" +
+            "18:jump 22\t\t(edge \"a1x3b->a1x3b\")\n" +
+            "19:start 1 (3)\t\t(edge \"a0x3b->a0x3b\")\n" +
+            "20:end 1 (3)\t\t(edge \"a0x3b->a0x3b\")\n" +
+            "21:jump 22\t\t(edge \"a0x3b->a0x3b\")\n" +
+            "22:check end\t(ch. 37-40)\n" +
+            "23:end $root (-1)  \t\t(root)\n" +
+            "24:match  \t\t(root)";
+    desc("", function () {
+        var parser = new Playspecs.Parser.Parser(promWeek);
+        var compiler = new Playspecs.Compiler(promWeek);
+        var parseTree = parser.parse("start, ($(not end...) ^ $(true)...), end").tree;
+        ex(Playspecs.SFA.fromParseTree(parseTree).toDot(), expectedSFAResult, Viz);
+        Playspecs.SFA.resetStateID();
+        var program = compiler.compile(parseTree, true);
+        var stringProgram = Playspecs.Compiler.stringify(program);
+        ex(stringProgram, expectedStringProgram);
+    })
+</script>
 
 </body>
 </html>

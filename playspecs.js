@@ -67,6 +67,10 @@ var Playspecs =
 	
 	var _playspec2 = _interopRequireDefault(_playspec);
 	
+	var _sfa = __webpack_require__(4);
+	
+	var SFA = { SFA: _sfa.SFACls, fromParseTree: _sfa.fromParseTree, resetStateID: _sfa.resetStateID };
+	exports.SFA = SFA;
 	var Parser = ParserExports;
 	exports.Parser = Parser;
 	var Compiler = _compiler2["default"];
@@ -94,6 +98,7 @@ var Playspecs =
 	
 	var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
 	
+	exports.cloneTree = cloneTree;
 	exports.isCustom = isCustom;
 	exports.isPropositional = isPropositional;
 	
@@ -141,6 +146,19 @@ var Playspecs =
 	};
 	
 	exports.parseTypes = parseTypes;
+	
+	function cloneTree(p) {
+	    return {
+	        type: p.type,
+	        value: p.value,
+	        children: p.children.slice(),
+	        range: {
+	            start: p.range.start,
+	            end: p.range.end
+	        }
+	    };
+	}
+	
 	var constantValue = function constantValue(c) {
 	    return function (_mr) {
 	        return c;
@@ -529,11 +547,19 @@ var Playspecs =
 	
 	var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
 	
+	exports.stringifyCustom = stringifyCustom;
+	exports.stringifyFormula = stringifyFormula;
+	exports.stringify = stringify;
+	
 	function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) arr2[i] = arr[i]; return arr2; } else { return Array.from(arr); } }
 	
 	function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 	
 	var _parser = __webpack_require__(1);
+	
+	var _sfa = __webpack_require__(4);
+	
+	var DEBUG_MODE = false;
 	
 	var Compiler = (function () {
 	    function Compiler(_ctx) {
@@ -589,7 +615,12 @@ var Playspecs =
 	                var jump = [{ type: "jump", target: cIdx, index: aIdx + _left.length, source: tree }];
 	                return branch.concat(_left).concat(jump).concat(_right);
 	            }
-	            if (tree.type == _parser.parseTypes.INTERSECTION) {}
+	            if (tree.type == _parser.parseTypes.INTERSECTION) {
+	                var a = (0, _sfa.fromParseTree)(tree.children[0]);
+	                var b = (0, _sfa.fromParseTree)(tree.children[1]);
+	                var axb = a.intersect(b);
+	                return this.compileSFA(axb, idx);
+	            }
 	            if (tree.type == _parser.parseTypes.REPETITION) {
 	                var greedy = tree.value.greedy;
 	                var min = tree.value.lowerBound;
@@ -652,6 +683,132 @@ var Playspecs =
 	            throw new Error("Can't compile " + JSON.stringify(tree));
 	        }
 	    }, {
+	        key: "compileSFA",
+	        value: function compileSFA(sfa, idx) {
+	            var stateStarts = {},
+	                endJumps = [];
+	            var pgm = [];
+	            for (var i = 0; i < sfa.startStates.length; i++) {
+	                var start = sfa.startStates[i];
+	                var startPgm = this.compileSFA_(start, idx, stateStarts, endJumps);
+	                pgm = pgm.concat(startPgm);
+	                idx += startPgm.length;
+	            }
+	            for (var i = 0; i < endJumps.length; i++) {
+	                endJumps[i].target = idx;
+	            }
+	            return pgm;
+	        }
+	    }, {
+	        key: "compileSFA_",
+	        value: function compileSFA_(state, idx, stateStarts, endJumps) {
+	            if (state.id in stateStarts) {
+	                return [{
+	                    type: "jump",
+	                    target: stateStarts[state.id],
+	                    index: idx,
+	                    source: { type: "state", value: state.id }
+	                }];
+	            }
+	            stateStarts[state.id] = idx;
+	            if (state.edges.length == 0) {
+	                if (state.isAccepting) {
+	                    var jump = {
+	                        type: "jump",
+	                        target: null,
+	                        index: idx,
+	                        source: { type: "state", value: state.id }
+	                    };
+	                    endJumps.push(jump);
+	                    return [jump];
+	                } else {
+	                    throw new Error("Compiling an SFA state with no outgoing edges");
+	                }
+	            } else {
+	                var pgm = [];
+	                for (var i = 0; i < state.edges.length - 1; i++) {
+	                    var _edge = state.edges[i];
+	                    var edgeSplit = {
+	                        type: "split",
+	                        left: idx + 1,
+	                        right: null,
+	                        index: idx,
+	                        source: { type: "state", value: state.id + "." + i }
+	                    };
+	                    var _edgePgm = [edgeSplit].concat(this.compileSFA_edge(state, _edge, idx + 1, stateStarts, endJumps));
+	                    pgm = pgm.concat(_edgePgm);
+	                    idx += _edgePgm.length;
+	                    edgeSplit.right = idx;
+	                }
+	                var edge = state.edges[state.edges.length - 1];
+	                var edgePgm = this.compileSFA_edge(state, edge, idx, stateStarts, endJumps);
+	                return pgm.concat(edgePgm);
+	            }
+	        }
+	    }, {
+	        key: "compileSFA_edge",
+	        value: function compileSFA_edge(state, edge, idx, stateStarts, endJumps) {
+	            //accepting self-edges need to be treated specially so they don't jump right back
+	            //to the parent state.
+	            var edgePgm = this.compileSFA_edgeLabel(state, edge, idx);
+	            idx += edgePgm.length;
+	            if (state.isAccepting && edge.target == state && !edge.formula) {
+	                var jump = {
+	                    type: "jump",
+	                    target: null,
+	                    index: idx,
+	                    source: { type: "edge", value: state.id + "->" + edge.target.id }
+	                };
+	                endJumps.push(jump);
+	                return edgePgm.concat([jump]);
+	            } else if (edge.formula) {
+	                return edgePgm.concat([{
+	                    type: "check",
+	                    formula: edge.formula,
+	                    index: idx,
+	                    source: { type: "edge", value: state.id + "->" + edge.target.id }
+	                }]).concat(this.compileSFA_(edge.target, idx + 1, stateStarts, endJumps));
+	            } else {
+	                return edgePgm.concat(this.compileSFA_(edge.target, idx, stateStarts, endJumps));
+	            }
+	        }
+	    }, {
+	        key: "compileSFA_edgeLabel",
+	        value: function compileSFA_edgeLabel(state, edge, idx) {
+	            var pgm = [];
+	            for (var i = 0; i < edge.label.length; i++) {
+	                var l = edge.label[i];
+	                if (l.type == "start-capture") {
+	                    var _captureID2 = this.captureIdx;
+	                    var _group2 = l.group;
+	                    l.captureID = _captureID2;
+	                    var start = {
+	                        type: "start",
+	                        group: _group2,
+	                        captureID: _captureID2,
+	                        index: idx,
+	                        source: { type: "edge", value: state.id + "->" + edge.target.id }
+	                    };
+	                    this.captureIdx++;
+	                    pgm.push(start);
+	                    idx++;
+	                } else if (l.type == "end-capture") {
+	                    var _captureID3 = l.start.captureID;
+	                    var _group3 = l.group;
+	                    var end = {
+	                        type: "end",
+	                        group: _group3,
+	                        captureID: _captureID3,
+	                        index: idx,
+	                        source: { type: "edge", value: state.id + "->" + edge.target.id }
+	                    };
+	                    pgm.push(end);
+	                    idx++;
+	                }
+	            }
+	            return pgm;
+	        }
+	    }, {
 	        key: "compile",
 	        value: function compile(tree) {
 	            var debug = arguments.length <= 1 || arguments[1] === undefined ? false : arguments[1];
@@ -662,6 +819,7 @@ var Playspecs =
 	            if (!this.validateParseTree(tree)) {
 	                throw new Error("Parse tree did not represent a valid program");
 	            }
+	            (0, _sfa.resetStateID)();
 	            this.captureIdx = 0;
 	            // We preface every program with "true .." so that all Playspecs are effectively start-anchored.
 	            // This is as per https://swtch.com/~rsc/regexp/regexp2.html
@@ -702,6 +860,9 @@ var Playspecs =
 	    }, {
 	        key: "validateParseTree",
 	        value: function validateParseTree(parseTree) {
+	            if (!DEBUG_MODE) {
+	                return true;
+	            }
 	            // ensure no ${} underneath a proposition
 	            if (this.anyCapturesInsidePropositions(parseTree)) {
 	                return false;
@@ -728,89 +889,48 @@ var Playspecs =
 	    }, {
 	        key: "validateProgram",
 	        value: function validateProgram(pgm) {
-	            // todo: validate programs against some basic sanity checks.
+	            // todo: validate programs against more basic sanity checks.
 	            //ensure each instruction's index is its index in pgm
 	            //ensure no split or jump goes beyond end of program
 	            //...
+	            if (!DEBUG_MODE) {
+	                return true;
+	            }
+	            for (var i = 0; i < pgm.length; i++) {
+	                var instr = pgm[i];
+	                //is its index correct?
+	                if (instr.index !== i) {
+	                    throw new Error("Bad code generation:" + instr.index + " != " + i + " for " + stringify([instr]) + " in " + stringify(pgm));
+	                }
+	            }
+	            var reachable = this.reachableInstructions(pgm, 0, {});
+	            for (var i = 0; i < pgm.length; i++) {
+	                if (!reachable[i]) {
+	                    throw new Error("Bad code generation:" + i + " not reachable for " + stringify([pgm[i]]) + " in " + stringify(pgm));
+	                }
+	            }
 	            return true;
 	        }
 	    }, {
-	        key: "stringifyCustom",
-	        value: function stringifyCustom(formula) {
-	            var _this = this;
-	
-	            var value = formula.value === undefined ? "" : formula.value.toString();
-	            var children = formula.children && formula.children.length ? formula.children.map(function (c) {
-	                return _this.stringifyFormula(c);
-	            }).join(",") : "";
-	            return formula.type + "(" + value + "," + children + ")";
-	        }
-	    }, {
-	        key: "stringifyFormula",
-	        value: function stringifyFormula(formula) {
-	            switch (formula.type) {
-	                case _parser.parseTypes.TRUE:
-	                    return "true";
-	                case _parser.parseTypes.FALSE:
-	                    return "false";
-	                case _parser.parseTypes.START:
-	                    return "start";
-	                case _parser.parseTypes.END:
-	                    return "end";
-	                case _parser.parseTypes.AND:
-	                    return this.stringifyFormula(formula.children[0]) + " & " + this.stringifyFormula(formula.children[1]);
-	                case _parser.parseTypes.OR:
-	                    return this.stringifyFormula(formula.children[0]) + " | " + this.stringifyFormula(formula.children[1]);
-	                case _parser.parseTypes.NOT:
-	                    return "not " + this.stringifyFormula(formula.children[0]);
-	                case _parser.parseTypes.GROUP:
-	                    return "(" + this.stringifyFormula(formula.children[0]) + ")";
-	                case _parser.parseTypes.CAPTURE:
-	                    return "$" + formula.captureID + ":" + formula.group + "(" + this.stringifyFormula(formula.children[0]) + ")";
-	                default:
-	                    return this.stringifyCustom(formula);
+	        key: "reachableInstructions",
+	        value: function reachableInstructions(pgm, i0, seen) {
+	            //a loop, or else out of program code
+	            if (i0 in seen || i0 >= pgm.length) {
+	                return seen;
 	            }
-	        }
-	    }, {
-	        key: "stringify",
-	        value: function stringify(code) {
-	            var result = [];
-	            for (var i = 0; i < code.length; i++) {
-	                var instr = code[i];
-	                var instrStr = i + ":" + instr.type;
-	                switch (instr.type) {
-	                    case "split":
-	                        instrStr += " " + instr.left + " " + instr.right;
-	                        break;
-	                    case "jump":
-	                        instrStr += " " + instr.target;
-	                        break;
-	                    case "check":
-	                        instrStr += " " + this.stringifyFormula(instr.formula);
-	                        break;
-	                    case "start":
-	                    case "end":
-	                        instrStr += " " + instr.group + " (" + instr.captureID + ")";
-	                        break;
-	                    case "match":
-	                        break;
-	                    default:
-	                        throw new Error("Unrecognized instruction " + instr);
-	                }
-	                if (instr.source) {
-	                    if (instr.source == "root") {
-	                        instrStr += "  \t\t(root)";
-	                    } else {
-	                        if (instr.type == "check") {
-	                            instrStr += "\t(ch. " + instr.source.range.start + "-" + instr.source.range.end + ")";
-	                        } else {
-	                            instrStr += "\t\t(" + instr.source.type + " " + JSON.stringify(instr.source.value) + ")";
-	                        }
-	                    }
-	                }
-	                result.push(instrStr);
+	            //mark i0 as seen
+	            seen[i0] = true;
+	            var other = pgm[i0];
+	            //follow indirection via recursive search, keeping track of seen locations
+	            if (other.type == "split") {
+	                var seenLeft = this.reachableInstructions(pgm, other.left, seen);
+	                return this.reachableInstructions(pgm, other.right, seenLeft);
+	            } else if (other.type == "jump") {
+	                return this.reachableInstructions(pgm, other.target, seen);
+	            } else {
+	                //for non-indirect instructions, just increment i0 and move on
+	                return this.reachableInstructions(pgm, i0 + 1, seen);
 	            }
-	            return result.join("\n");
 	        }
 	    }]);
 	
@@ -818,9 +938,81 @@ var Playspecs =
 	})();
 	
 	exports["default"] = Compiler;
-	module.exports = exports["default"];
-
-	// TODO: intersection
+	
+	function stringifyCustom(formula) {
+	    var value = formula.value === undefined ? "" : formula.value.toString();
+	    var children = formula.children && formula.children.length ? formula.children.map(function (c) {
+	        return stringifyFormula(c);
+	    }).join(",") : "";
+	    return formula.type + "(" + value + "," + children + ")";
+	}
+	
+	function stringifyFormula(formula) {
+	    switch (formula.type) {
+	        case _parser.parseTypes.TRUE:
+	            return "true";
+	        case _parser.parseTypes.FALSE:
+	            return "false";
+	        case _parser.parseTypes.START:
+	            return "start";
+	        case _parser.parseTypes.END:
+	            return "end";
+	        case _parser.parseTypes.AND:
+	            return stringifyFormula(formula.children[0]) + " & " + stringifyFormula(formula.children[1]);
+	        case _parser.parseTypes.OR:
+	            return stringifyFormula(formula.children[0]) + " | " + stringifyFormula(formula.children[1]);
+	        case _parser.parseTypes.NOT:
+	            return "not " + stringifyFormula(formula.children[0]);
+	        case _parser.parseTypes.GROUP:
+	            return "(" + stringifyFormula(formula.children[0]) + ")";
+	        case _parser.parseTypes.CAPTURE:
+	            return "$" + formula.captureID + ":" + formula.group + "(" + stringifyFormula(formula.children[0]) + ")";
+	        default:
+	            return stringifyCustom(formula);
+	    }
+	}
+	
+	function stringify(code) {
+	    var result = [];
+	    for (var i = 0; i < code.length; i++) {
+	        var instr = code[i];
+	        var instrStr = i + ":" + instr.type;
+	        switch (instr.type) {
+	            case "split":
+	                instrStr += " " + instr.left + " " + instr.right;
+	                break;
+	            case "jump":
+	                instrStr += " " + instr.target;
+	                break;
+	            case "check":
+	                instrStr += " " + stringifyFormula(instr.formula);
+	                break;
+	            case "start":
+	            case "end":
+	                instrStr += " " + instr.group + " (" + instr.captureID + ")";
+	                break;
+	            case "match":
+	                break;
+	            default:
+	                throw new Error("Unrecognized instruction " + instr);
+	        }
+	        if (instr.source) {
+	            if (instr.source == "root") {
+	                instrStr += "  \t\t(root)";
+	            } else {
+	                if (instr.type == "check" && "range" in instr.source) {
+	                    instrStr += "\t(ch. " + instr.source.range.start + "-" + instr.source.range.end + ")";
+	                } else {
+	                    instrStr += "\t\t(" + instr.source.type + " " + JSON.stringify(instr.source.value) + ")";
+	                }
+	            }
+	        }
+	        result.push(instrStr);
+	    }
+	    return result.join("\n");
+	}
+	
+	Compiler.stringify = stringify;
 
 /***/ },
 /* 3 */
@@ -1569,6 +1761,470 @@ var Playspecs =
 	})();
 
 	module.exports = exports["default"];
+
+/***/ },
+/* 4 */
+/***/ function(module, exports, __webpack_require__) {
+
+	"use strict";
+	
+	Object.defineProperty(exports, "__esModule", {
+	    value: true
+	});
+	
+	var _slicedToArray = (function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"]) _i["return"](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError("Invalid attempt to destructure non-iterable instance"); } }; })();
+	
+	var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
+	
+	exports.resetStateID = resetStateID;
+	exports.fromParseTree = fromParseTree;
+	
+	function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) arr2[i] = arr[i]; return arr2; } else { return Array.from(arr); } }
+	
+	function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+	
+	function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+	
+	var _parser = __webpack_require__(1);
+	
+	var _compiler = __webpack_require__(2);
+	
+	var stateID = 0;
+	
+	function resetStateID() {
+	    stateID = 0;
+	}
+	
+	var SFA = (function () {
+	    function SFA() {
+	        _classCallCheck(this, SFA);
+	
+	        this.startStates = [new State()];
+	        this.acceptingStates = [];
+	    }
+	
+	    _createClass(SFA, [{
+	        key: "newState",
+	        value: function newState(optID) {
+	            return new State(optID);
+	        }
+	    }, {
+	        key: "markAccepting",
+	        value: function markAccepting(s) {
+	            //add to acceptingStates
+	            if (this.acceptingStates.indexOf(s) == -1) {
+	                this.acceptingStates.push(s);
+	            }
+	            //add accepting self-edge
+	            s.addEdge(new Edge(s, null, []));
+	            //mark accepting
+	            s.isAccepting = true;
+	        }
+	    }, {
+	        key: "markNonAccepting",
+	        value: function markNonAccepting(s) {
+	            //mark non-accepting
+	            s.isAccepting = false;
+	            if (this.acceptingStates.indexOf(s) != -1) {
+	                //remove from acceptingStates
+	                s.acceptingStates.splice(s.acceptingStates.indexOf(s), 1);
+	            }
+	        }
+	    }, {
+	        key: "getStates",
+	        value: function getStates() {
+	            var found = {};
+	            var stack = this.startStates.slice();
+	            while (stack.length) {
+	                var here = stack.pop();
+	                found[here.id] = here;
+	                for (var ek in here.edges) {
+	                    var e = here.edges[ek];
+	                    if (e.target && !(e.target.id in found)) {
+	                        stack.push(e.target);
+	                    }
+	                }
+	            }
+	            return Object.keys(found).map(function (k) {
+	                return found[k];
+	            });
+	        }
+	    }, {
+	        key: "toDot",
+	        value: function toDot() {
+	            var start = "digraph g {\n" + "  rankdir=LR;\n";
+	            var middle = this.getStates().map(function (s) {
+	                return ["  " + s.id + (" [shape=" + (s.isAccepting ? "doublecircle" : "circle") + "];")].concat(s.edges.map(function (e, i) {
+	                    return "  " + s.id + "->" + e.target.id + (" [label=\"" + i + ":" + (e.formula ? (0, _compiler.stringifyFormula)(e.formula) : "&#949;") + ":" + e.label.map(function (l) {
+	                        return l.type + "." + l.group;
+	                    }).join(",") + "\"];");
+	                })).join("\n");
+	            }).join("\n");
+	            var end = "\n}";
+	            return start + middle + end;
+	        }
+	    }, {
+	        key: "eelim",
+	        value: function eelim() {
+	            var _this = this;
+	
+	            var stack = this.startStates.slice(),
+	                seen = {};
+	            for (var sk = 0; sk < stack.length; sk++) {
+	                seen[stack[sk].id] = stack[sk];
+	            }
+	
+	            var _loop = function () {
+	                var s = stack.pop();
+	                var reachable = _defineProperty({}, s.id, s);
+	
+	                var _loop2 = function (_i) {
+	                    var e = s.edges[_i];
+	                    //e is a null transition but not an accepting null transition
+	                    if (!e.formula && !(s.isAccepting && e.target == s)) {
+	                        if (e.target.id in reachable) {
+	                            s.edges.splice(_i, 1);
+	                            _i--;
+	                            return "continue";
+	                        } else {
+	                            var _s$edges;
+	
+	                            var targetEs = e.target.edges;
+	                            var newEs = targetEs.map(function (te) {
+	                                return new Edge(te.target == e.target && te.formula == null ? s : te.target, te.formula, e.label.concat(te.label));
+	                            });
+	                            if (e.target.isAccepting && !s.isAccepting) {
+	                                _this.acceptingStates.push(s);
+	                                s.isAccepting = true;
+	                            }
+	                            (_s$edges = s.edges).splice.apply(_s$edges, [_i, 1].concat(_toConsumableArray(newEs)));
+	                        }
+	                    }
+	                    reachable[e.target.id] = e.target;
+	                    i = _i;
+	                };
+	
+	                for (var i = 0; i < s.edges.length; i++) {
+	                    var _ret2 = _loop2(i);
+	
+	                    if (_ret2 === "continue") continue;
+	                }
+	                for (var rk in reachable) {
+	                    if (!(rk in seen)) {
+	                        stack.push(reachable[rk]);
+	                        seen[rk] = reachable[rk];
+	                    }
+	                }
+	            };
+	
+	            while (stack.length) {
+	                _loop();
+	            }
+	            return this;
+	        }
+	    }, {
+	        key: "intersect",
+	        value: function intersect(b) {
+	            this.eelim();
+	            var a = this;
+	            b.eelim();
+	            var axb = new SFA();
+	            axb.startStates = [];
+	            var stack = [],
+	                states = {};
+	            for (var _i2 = 0; _i2 < a.startStates.length; _i2++) {
+	                var sa = a.startStates[_i2];
+	                for (var j = 0; j < b.startStates.length; j++) {
+	                    var sb = b.startStates[j];
+	                    stack.push([sa, sb]);
+	                    if (!(sa.id in states)) {
+	                        states[sa.id] = {};
+	                    }
+	                    var sasb = axb.newState("a" + sa.id + "x" + sb.id + "b");
+	                    axb.startStates.push(sasb);
+	                    states[sa.id][sb.id] = sasb;
+	                    if (sa.isAccepting && sb.isAccepting) {
+	                        axb.markAccepting(sasb);
+	                    }
+	                }
+	            }
+	            while (stack.length) {
+	                var _stack$pop = stack.pop();
+	
+	                var _stack$pop2 = _slicedToArray(_stack$pop, 2);
+	
+	                var sa = _stack$pop2[0];
+	                var sb = _stack$pop2[1];
+	
+	                var sab = states[sa.id][sb.id];
+	                for (var _i3 = 0; _i3 < sa.edges.length; _i3++) {
+	                    var ae = sa.edges[_i3];
+	                    var aet = ae.target;
+	                    var aeIsAcceptingSelfEdge = sa.isAccepting && aet == sa && !ae.formula;
+	                    for (var j = 0; j < sb.edges.length; j++) {
+	                        var be = sb.edges[j];
+	                        var bet = be.target;
+	                        var beIsAcceptingSelfEdge = sb.isAccepting && bet == sb && !be.formula;
+	                        var phi = null;
+	                        if (aeIsAcceptingSelfEdge != beIsAcceptingSelfEdge) {
+	                            continue;
+	                        } else if (!aeIsAcceptingSelfEdge) {
+	                            if (!ae.formula || !be.formula) {
+	                                console.error("Uneliminated non ASE epsilon transition");
+	                            }
+	                            phi = intersectFormulae(ae.formula, be.formula);
+	                            if (!phi) {
+	                                continue;
+	                            }
+	                        }
+	                        var combined = null;
+	                        if (aet.id in states && bet.id in states[aet.id]) {
+	                            combined = states[aet.id][bet.id];
+	                        } else {
+	                            combined = axb.newState("a" + aet.id + "x" + bet.id + "b");
+	                            if (!(aet.id in states)) {
+	                                states[aet.id] = {};
+	                            }
+	                            states[aet.id][bet.id] = combined;
+	                            stack.push([aet, bet]);
+	                            if (aet.isAccepting && bet.isAccepting) {
+	                                //no need for markaccepting or to check membership of combined.
+	                                //former because we'll get the accepting self edges for free
+	                                //latter because this state is by definition new
+	                                combined.isAccepting = true;
+	                                axb.acceptingStates.push(combined);
+	                            }
+	                        }
+	                        sab.addEdge(new Edge(combined, phi, ae.label.concat(be.label)));
+	                    }
+	                }
+	            }
+	            return axb;
+	        }
+	    }]);
+	
+	    return SFA;
+	})();
+	
+	exports.SFA = SFA;
+	
+	function intersectFormulae(p1, p2) {
+	    //todo: fixme: implement for real
+	    return { type: _parser.parseTypes.AND, value: "&", children: [p1, p2], range: { start: -1, end: -1 } };
+	}
+	
+	var State = (function () {
+	    function State(id) {
+	        _classCallCheck(this, State);
+	
+	        this.id = id || stateID++;
+	        this.edges = [];
+	        this.isAccepting = false;
+	    }
+	
+	    _createClass(State, [{
+	        key: "addEdge",
+	        value: function addEdge(e) {
+	            this.edges.push(e);
+	        }
+	    }, {
+	        key: "removeEdge",
+	        value: function removeEdge(e) {
+	            this.edges.splice(this.edges.indexOf(e), 1);
+	        }
+	    }]);
+	
+	    return State;
+	})();
+	
+	var Edge = function Edge(target, formula, label) {
+	    _classCallCheck(this, Edge);
+	
+	    this.target = target;
+	    this.formula = formula;
+	    this.label = label;
+	};
+	
+	function fromParseTree(tree) {
+	    var sfa = new SFA();
+	    var s = sfa.startStates[0];
+	    var outEdges = build(sfa, s, tree);
+	    var terminus = sfa.newState();
+	    for (var ek = 0; ek < outEdges.length; ek++) {
+	        var e = outEdges[ek];
+	        e.target = terminus;
+	    }
+	    sfa.markAccepting(terminus);
+	    return sfa;
+	}
+	
+	function build(_x, _x2, _x3) {
+	    var _again = true;
+	
+	    _function: while (_again) {
+	        var sfa = _x,
+	            seedState = _x2,
+	            tree = _x3;
+	        e = aes = s = ek = e = greedy = min = max = phi = cloned = next = cloned = next = edges = out = edges = out = edges = ek = _e = e = e = edges = ek = _e2 = s = es = s = captureStart = es = ek = e = a = b = aes = bes = a = b = axb = oldAccepting = startk = outEdges = acck = acc = ei = undefined;
+	        _again = false;
+	
+	        if ((0, _parser.isPropositional)(tree) && tree.type != _parser.parseTypes.CAPTURE) {
+	            var e = new Edge(null, tree, []);
+	            seedState.addEdge(e);
+	            return [e];
+	        } else if (tree.type == _parser.parseTypes.CONCATENATION) {
+	            var aes = build(sfa, seedState, tree.children[0]);
+	            var s = sfa.newState();
+	            for (var ek = 0; ek < aes.length; ek++) {
+	                var e = aes[ek];
+	                e.target = s;
+	            }
+	            _x = sfa;
+	            _x2 = s;
+	            _x3 = tree.children[1];
+	            _again = true;
+	            continue _function;
+	        } else if (tree.type == _parser.parseTypes.REPETITION) {
+	            var greedy = tree.value.greedy;
+	            var min = tree.value.lowerBound;
+	            var max = tree.value.upperBound;
+	            var phi = tree.children[0];
+	            if (min > 0) {
+	                var cloned = (0, _parser.cloneTree)(tree);
+	                cloned.value.lowerBound--;
+	                if (cloned.value.upperBound != "$END") {
+	                    cloned.value.upperBound--;
+	                }
+	                var next = {
+	                    type: _parser.parseTypes.CONCATENATION,
+	                    value: ",",
+	                    children: [(0, _parser.cloneTree)(phi), cloned],
+	                    range: { start: cloned.start, end: cloned.end }
+	                };
+	                _x = sfa;
+	                _x2 = seedState;
+	                _x3 = next;
+	                _again = true;
+	                continue _function;
+	            } else if (max != "$END") {
+	                var cloned = (0, _parser.cloneTree)(tree);
+	                cloned.value.upperBound--;
+	                var next = {
+	                    type: _parser.parseTypes.CONCATENATION,
+	                    value: ",",
+	                    children: [(0, _parser.cloneTree)(phi), cloned],
+	                    range: { start: cloned.start, end: cloned.end }
+	                };
+	                //Lots of duplication here when only orderings are changed. Not so proud of it
+	                //but let's just make sure it's working first.
+	                if (greedy) {
+	                    var edges = [];
+	                    if (max == 0) {
+	                        edges = edges.concat([new Edge(null, phi, [])]);
+	                    } else {
+	                        edges = edges.concat(build(sfa, seedState, next));
+	                    }
+	                    var out = new Edge(null, null, []);
+	                    seedState.addEdge(out);
+	                    edges.push(out);
+	                    return edges;
+	                } else {
+	                    var edges = [];
+	                    var out = new Edge(null, null, []);
+	                    seedState.addEdge(out);
+	                    edges.push(out);
+	                    if (max == 1) {
+	                        edges = edges.concat([new Edge(null, phi, [])]);
+	                    } else {
+	                        edges = edges.concat(build(sfa, seedState, next));
+	                    }
+	                    return edges;
+	                }
+	            } else {
+	                if (greedy) {
+	                    var edges = build(sfa, seedState, phi);
+	                    for (var ek = 0; ek < edges.length; ek++) {
+	                        var _e = edges[ek];
+	                        _e.target = seedState;
+	                    }
+	                    var e = new Edge(null, null, []);
+	                    seedState.addEdge(e);
+	                    return [e];
+	                } else {
+	                    var e = new Edge(null, null, []);
+	                    seedState.addEdge(e);
+	                    var edges = build(sfa, seedState, phi);
+	                    for (var ek = 0; ek < edges.length; ek++) {
+	                        var _e2 = edges[ek];
+	                        _e2.target = seedState;
+	                    }
+	                    return [e];
+	                }
+	            }
+	        } else if (tree.type == _parser.parseTypes.GROUP) {
+	            var s = sfa.newState();
+	            seedState.addEdge(new Edge(s, null, []));
+	            var es = build(sfa, s, tree.children[0]);
+	            return es;
+	        } else if (tree.type == _parser.parseTypes.CAPTURE) {
+	            var s = sfa.newState();
+	            //hack: we store a link from the end to its corresponding start
+	            //so that the correct captureID can be propagated to the "end"
+	            //from the "start" during compilation
+	            var captureStart = { type: "start-capture", group: tree.value.group == "$implicit" ? s.id : tree.value.group };
+	            seedState.addEdge(new Edge(s, null, [captureStart]));
+	            var es = build(sfa, s, tree.children[0]);
+	            for (var ek = 0; ek < es.length; ek++) {
+	                var e = es[ek];
+	                e.label.push({
+	                    type: "end-capture",
+	                    group: tree.value.group == "$implicit" ? s.id : tree.value.group,
+	                    start: captureStart
+	                });
+	            }
+	            return es;
+	        } else if (tree.type == _parser.parseTypes.ALTERNATION) {
+	            var a = sfa.newState();
+	            var b = sfa.newState();
+	            seedState.addEdge(new Edge(a, null, []));
+	            seedState.addEdge(new Edge(b, null, []));
+	            var aes = build(sfa, a, tree.children[0]);
+	            var bes = build(sfa, b, tree.children[1]);
+	            return aes.concat(bes);
+	        } else if (tree.type == _parser.parseTypes.INTERSECTION) {
+	            var a = fromParseTree(tree.children[0]);
+	            var b = fromParseTree(tree.children[1]);
+	            var axb = a.intersect(b);
+	            var oldAccepting = axb.acceptingStates.slice();
+	            //console.log("Supposed accepting:", oldAccepting, "actual",
+	            //    axb.getStates().filter((s) => s.isAccepting)
+	            //);
+	            for (var startk = 0; startk < axb.startStates.length; startk++) {
+	                seedState.addEdge(new Edge(axb.startStates[startk], null, []));
+	            }
+	            var outEdges = [];
+	            for (var acck = 0; acck < oldAccepting.length; acck++) {
+	                var acc = oldAccepting[acck];
+	                sfa.markNonAccepting(acc);
+	                //find the self-edge and repoint it towards nothing, including it in outEdges
+	                for (var ei = 0; ei < acc.edges.length; ei++) {
+	                    if (acc.edges[ei].target == acc && !acc.edges[ei].formula) {
+	                        acc.edges[ei].target = null;
+	                        outEdges.push(acc.edges[ei]);
+	                    }
+	                }
+	            }
+	
+	            //console.log("POST supposed accepting:", sfa.acceptingStates, "actual",
+	            //    sfa.getStates().filter((s) => s.isAccepting)
+	            //);
+	
+	            return outEdges;
+	        } else {
+	            throw "Not yet implemented";
+	        }
+	    }
+	}
 
 /***/ }
 /******/ ]);

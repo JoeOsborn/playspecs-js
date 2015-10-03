@@ -78,6 +78,18 @@ TokenStream = {
     errors: Array < number >
 };
 
+export function cloneTree(p:ParseTree):ParseTree {
+    return {
+        type:p.type,
+        value:p.value,
+        children:p.children.slice(),
+        range:{
+            start:p.range.start,
+            end:p.range.end
+        }
+    };
+}
+
 export const constantValue = function (c:any) {
     return function (_mr:MatchResult) {
         return c;

@@ -57,32 +57,32 @@ function desc(str, func) {
     out += "<ol class='examples'>";
     var errorCount = 0;
     for (var i = 0; i < exResults.length; i++) {
-        var isJSON = exResults[i].isJSON;
         var left = exResults[i].left;
         var right = exResults[i].right;
+        var renderer = exResults[i].renderer;
         if (left == right || right === undefined) {
             out += "<li class='good'>" +
                 "<details>" +
                 "<summary>ex " + (i + 1) + " as expected.</summary>" +
-                (isJSON ? prettify(left) : left) +
+                renderer(left) +
                 "</details>";
         } else {
             out += "<li class='bad'>" +
                 "<details open='true'>" +
                 "<summary>ex " + (i + 1) + " not as expected.</summary>" +
-                (isJSON ? prettify(left) : left) +
-                (isJSON ? prettify(right) : right) +
+                renderer(left) +
+                renderer(right) +
                 "</details>";
-            console.log("Got "+left+", expected "+right);
+            console.error("Got",left,"expected",right);
             errorCount++;
         }
     }
     out += "</ol>";
     document.write(out);
     if (errorCount) {
-        console.log("Desc " + descCounter + " had " + errorCount + " errors");
+        console.error("Desc " + descCounter + " had " + errorCount + " errors");
     } else {
-        console.log("Desc " + descCounter + " OK");
+        console.info("Desc " + descCounter + " OK");
     }
     exResults = [];
     descCounter++;
@@ -99,19 +99,27 @@ function fnReplacer(_key, value) {
     return value;
 }
 
-function ex(v1, v2) {
+function preRenderer(val) {
+    return "<pre>"+val+"</pre>";
+}
+
+function jsonRenderer(val) {
+    return JSON.stringify(val, fnReplacer, 2);
+}
+
+function ex(v1, v2, renderer) {
     var result;
     if (isString(v1) && (v2 === undefined || isString(v2))) {
         result = {
-            left: "<pre>" + v1 + "</pre>",
-            right: (v2 === undefined ? undefined : "<pre>" + v2 + "</pre>"),
-            isJSON: false
+            left: v1,
+            right: v2,
+            renderer: renderer || preRenderer
         };
     } else {
         result = {
             left: JSON.stringify(v1, fnReplacer, 2),
             right: (v2 === undefined ? undefined : JSON.stringify(v2, fnReplacer, 2)),
-            isJSON: true
+            renderer: renderer || prettify
         };
     }
     exResults.push(result);

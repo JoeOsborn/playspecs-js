@@ -1,6 +1,7 @@
 /* @flow */
 
 import {parseTypes, isPropositional, BOUND_INFINITE} from "./parser";
+import {fromParseTree,resetStateID} from "./sfa";
 
 type
 Instruction =
@@ -12,6 +13,8 @@ Instruction =
     {type: "end", group: string | number, captureID: number, index? : number, source? : "root" | ParseTree};
 type
 Program = Array < Instruction >;
+
+const DEBUG_MODE = false;
 
 export default class Compiler {
     constructor(_ctx) {
@@ -64,7 +67,10 @@ export default class Compiler {
             return branch.concat(left).concat(jump).concat(right);
         }
         if (tree.type == parseTypes.INTERSECTION) {
-            // TODO: intersection
+            const a = fromParseTree(tree.children[0]);
+            const b = fromParseTree(tree.children[1]);
+            const axb = a.intersect(b);
+            return this.compileSFA(axb, idx);
         }
         if (tree.type == parseTypes.REPETITION) {
             const greedy = tree.value.greedy;
@@ -128,6 +134,133 @@ export default class Compiler {
         throw new Error("Can't compile " + JSON.stringify(tree));
     }
 
+    compileSFA(sfa:SFA, idx:number):Program {
+        let stateStarts = {}, endJumps = [];
+        let pgm = [];
+        for (let i = 0; i < sfa.startStates.length; i++) {
+            const start = sfa.startStates[i];
+            const startPgm = this.compileSFA_(start, idx, stateStarts, endJumps);
+            pgm = pgm.concat(startPgm);
+            idx += startPgm.length;
+        }
+        for (let i = 0; i < endJumps.length; i++) {
+            endJumps[i].target = idx;
+        }
+        return pgm;
+    }
+
+    compileSFA_(state, idx, stateStarts, endJumps) {
+        if (state.id in stateStarts) {
+            return [{
+                type: "jump",
+                target: stateStarts[state.id],
+                index: idx,
+                source: {type: "state", value: state.id}
+            }];
+        }
+        stateStarts[state.id] = idx;
+        if (state.edges.length == 0) {
+            if (state.isAccepting) {
+                const jump = {
+                    type: "jump",
+                    target: null,
+                    index: idx,
+                    source: {type: "state", value: state.id}
+                };
+                endJumps.push(jump);
+                return [jump];
+            } else {
+                throw new Error("Compiling an SFA state with no outgoing edges");
+            }
+        } else {
+            let pgm = [];
+            for (let i = 0; i < state.edges.length - 1; i++) {
+                const edge = state.edges[i];
+                const edgeSplit = {
+                    type: "split",
+                    left: idx + 1,
+                    right: null,
+                    index: idx,
+                    source: {type: "state", value: `${state.id}.${i}`}
+                };
+                const edgePgm = [edgeSplit].concat(
+                    this.compileSFA_edge(state, edge, idx + 1, stateStarts, endJumps)
+                );
+                pgm = pgm.concat(edgePgm);
+                idx += edgePgm.length;
+                edgeSplit.right = idx;
+            }
+            const edge = state.edges[state.edges.length - 1];
+            const edgePgm = this.compileSFA_edge(state, edge, idx, stateStarts, endJumps);
+            return pgm.concat(edgePgm);
+        }
+    }
+
+    compileSFA_edge(state, edge, idx, stateStarts, endJumps) {
+        //accepting self-edges need to be treated specially so they don't jump right back
+        //to the parent state.
+        const edgePgm = this.compileSFA_edgeLabel(state, edge, idx);
+        idx += edgePgm.length;
+        if (state.isAccepting && edge.target == state && !edge.formula) {
+            const jump = {
+                type: "jump",
+                target: null,
+                index: idx,
+                source: {type: "edge", value: `${state.id}->${edge.target.id}`}
+            };
+            endJumps.push(jump);
+            return edgePgm.concat([jump]);
+        } else if (edge.formula) {
+            return edgePgm.concat([{
+                type: "check",
+                formula: edge.formula,
+                index: idx,
+                source: {type: "edge", value: `${state.id}->${edge.target.id}`}
+            }]).concat(
+                this.compileSFA_(edge.target, idx + 1, stateStarts, endJumps)
+            );
+        } else {
+            return edgePgm.concat(
+                this.compileSFA_(edge.target, idx, stateStarts, endJumps)
+            );
+        }
+    }
+
+    compileSFA_edgeLabel(state, edge, idx) {
+        let pgm = [];
+        for (let i = 0; i < edge.label.length; i++) {
+            const l = edge.label[i];
+            if (l.type == "start-capture") {
+                const captureID = this.captureIdx;
+                const group = l.group;
+                l.captureID = captureID;
+                const start = {
+                    type: "start",
+                    group: group,
+                    captureID: captureID,
+                    index: idx,
+                    source: {type: "edge", value: `${state.id}->${edge.target.id}`}
+                };
+                this.captureIdx++;
+                pgm.push(start);
+                idx++;
+            } else if (l.type == "end-capture") {
+                const captureID = l.start.captureID;
+                const group = l.group;
+                const end = {
+                    type: "end",
+                    group: group,
+                    captureID: captureID,
+                    index: idx,
+                    source: {type: "edge", value: `${state.id}->${edge.target.id}`}
+                };
+                pgm.push(end);
+                idx++;
+            }
+        }
+        return pgm;
+    }
+
     compile(tree:ParseTree, debug:bool = false):Program {
         if (!tree.type && tree.tree && tree.errors && tree.remainder) {
             throw new Error(
@@ -138,6 +271,7 @@ export default class Compiler {
         if (!this.validateParseTree(tree)) {
             throw new Error("Parse tree did not represent a valid program");
         }
+        resetStateID();
         this.captureIdx = 0;
         // We preface every program with "true .." so that all Playspecs are effectively start-anchored.
         // This is as per https://swtch.com/~rsc/regexp/regexp2.html
@@ -187,6 +321,9 @@ export default class Compiler {
     }
 
     validateParseTree(parseTree:ParseTree):bool {
+        if (!DEBUG_MODE) {
+            return true;
+        }
         // ensure no ${} underneath a proposition
         if (this.anyCapturesInsidePropositions(parseTree)) {
             return false;
@@ -211,83 +348,121 @@ export default class Compiler {
     }
 
     validateProgram(pgm:Program):bool {
-        // todo: validate programs against some basic sanity checks.
+        // todo: validate programs against more basic sanity checks.
         //ensure each instruction's index is its index in pgm
         //ensure no split or jump goes beyond end of program
         //...
+        if (!DEBUG_MODE) {
+            return true;
+        }
+        for (let i = 0; i < pgm.length; i++) {
+            const instr = pgm[i];
+            //is its index correct?
+            if (instr.index !== i) {
+                throw new Error(`Bad code generation:${instr.index} != ${i} for ${stringify([instr])} in ${stringify(pgm)}`);
+            }
+        }
+        const reachable = this.reachableInstructions(pgm, 0, {});
+        for (let i = 0; i < pgm.length; i++) {
+            if (!reachable[i]) {
+                throw new Error(`Bad code generation:${i} not reachable for ${stringify([pgm[i]])} in ${stringify(pgm)}`);
+            }
+        }
         return true;
     }
 
-    stringifyCustom(formula:ParseTree):string {
-        const value = formula.value === undefined ? "" : formula.value.toString();
-        const children = formula.children && formula.children.length ?
-            (formula.children.map((c) => this.stringifyFormula(c))).join(",") :
-            "";
-        return `${formula.type}(${value},${children})`;
-    }
-
-    stringifyFormula(formula:ParseTree):string {
-        switch (formula.type) {
-            case parseTypes.TRUE:
-                return "true";
-            case parseTypes.FALSE:
-                return "false";
-            case parseTypes.START:
-                return "start";
-            case parseTypes.END:
-                return "end";
-            case parseTypes.AND:
-                return `${this.stringifyFormula(formula.children[0])} & ${this.stringifyFormula(formula.children[1])}`;
-            case parseTypes.OR:
-                return `${this.stringifyFormula(formula.children[0])} | ${this.stringifyFormula(formula.children[1])}`;
-            case parseTypes.NOT:
-                return `not ${this.stringifyFormula(formula.children[0])}`;
-            case parseTypes.GROUP:
-                return `(${this.stringifyFormula(formula.children[0])})`;
-            case parseTypes.CAPTURE:
-                return `$${formula.captureID}:${formula.group}(${this.stringifyFormula(formula.children[0])})`;
-            default:
-                return this.stringifyCustom(formula);
+    reachableInstructions(pgm, i0, seen) {
+        //a loop, or else out of program code
+        if ((i0 in seen) || i0 >= pgm.length) {
+            return seen;
         }
-    }
-
-    stringify(code:Program):string {
-        let result = [];
-        for (let i = 0; i < code.length; i++) {
-            const instr = code[i];
-            let instrStr = `${i}:${instr.type}`;
-            switch (instr.type) {
-                case "split":
-                    instrStr += ` ${instr.left} ${instr.right}`;
-                    break;
-                case "jump":
-                    instrStr += ` ${instr.target}`;
-                    break;
-                case "check":
-                    instrStr += " " + this.stringifyFormula(instr.formula);
-                    break;
-                case "start":
-                case "end":
-                    instrStr += ` ${instr.group} (${instr.captureID})`;
-                    break;
-                case "match":
-                    break;
-                default:
-                    throw new Error("Unrecognized instruction " + instr);
-            }
-            if (instr.source) {
-                if (instr.source == "root") {
-                    instrStr += "  \t\t(root)";
-                } else {
-                    if (instr.type == "check") {
-                        instrStr += `\t(ch. ${instr.source.range.start}-${instr.source.range.end})`;
-                    } else {
-                        instrStr += `\t\t(${instr.source.type} ${JSON.stringify(instr.source.value)})`;
-                    }
-                }
-            }
-            result.push(instrStr);
+        //mark i0 as seen
+        seen[i0] = true;
+        const other = pgm[i0];
+        //follow indirection via recursive search, keeping track of seen locations
+        if (other.type == "split") {
+            let seenLeft = this.reachableInstructions(pgm, other.left, seen);
+            return this.reachableInstructions(pgm, other.right, seenLeft);
+        } else if (other.type == "jump") {
+            return this.reachableInstructions(pgm, other.target, seen);
+        } else {
+            //for non-indirect instructions, just increment i0 and move on
+            return this.reachableInstructions(pgm, i0 + 1, seen);
         }
-        return result.join("\n");
     }
 }
+
+export function stringifyCustom(formula:ParseTree):string {
+    const value = formula.value === undefined ? "" : formula.value.toString();
+    const children = formula.children && formula.children.length ?
+        (formula.children.map((c) => stringifyFormula(c))).join(",") :
+        "";
+    return `${formula.type}(${value},${children})`;
+}
+
+export function stringifyFormula(formula:ParseTree):string {
+    switch (formula.type) {
+        case parseTypes.TRUE:
+            return "true";
+        case parseTypes.FALSE:
+            return "false";
+        case parseTypes.START:
+            return "start";
+        case parseTypes.END:
+            return "end";
+        case parseTypes.AND:
+            return `${stringifyFormula(formula.children[0])} & ${stringifyFormula(formula.children[1])}`;
+        case parseTypes.OR:
+            return `${stringifyFormula(formula.children[0])} | ${stringifyFormula(formula.children[1])}`;
+        case parseTypes.NOT:
+            return `not ${stringifyFormula(formula.children[0])}`;
+        case parseTypes.GROUP:
+            return `(${stringifyFormula(formula.children[0])})`;
+        case parseTypes.CAPTURE:
+            return `$${formula.captureID}:${formula.group}(${stringifyFormula(formula.children[0])})`;
+        default:
+            return stringifyCustom(formula);
+    }
+}
+
+export function stringify(code:Program):string {
+    let result = [];
+    for (let i = 0; i < code.length; i++) {
+        const instr = code[i];
+        let instrStr = `${i}:${instr.type}`;
+        switch (instr.type) {
+            case "split":
+                instrStr += ` ${instr.left} ${instr.right}`;
+                break;
+            case "jump":
+                instrStr += ` ${instr.target}`;
+                break;
+            case "check":
+                instrStr += " " + stringifyFormula(instr.formula);
+                break;
+            case "start":
+            case "end":
+                instrStr += ` ${instr.group} (${instr.captureID})`;
+                break;
+            case "match":
+                break;
+            default:
+                throw new Error("Unrecognized instruction " + instr);
+        }
+        if (instr.source) {
+            if (instr.source == "root") {
+                instrStr += "  \t\t(root)";
+            } else {
+                if (instr.type == "check" && "range" in instr.source) {
+                    instrStr += `\t(ch. ${instr.source.range.start}-${instr.source.range.end})`;
+                } else {
+                    instrStr += `\t\t(${instr.source.type} ${JSON.stringify(instr.source.value)})`;
+                }
+            }
+        }
+        result.push(instrStr);
+    }
+    return result.join("\n");
+}
+
+Compiler.stringify = stringify;

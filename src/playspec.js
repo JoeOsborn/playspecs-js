@@ -231,7 +231,9 @@ const matchEquivFn = function (a:Match, b:Match) {
         return false;
     }
     for (let i = 0; i < a.instructions.length; i++) {
-        if (a[i].type != b[i].type || a[i].index != b[i].index || a[i].group != b[i].group) {
+        if (a.instructions[i].type != b.instructions[i].type ||
+          a.instructions[i].index != b.instructions[i].index ||
+          a.instructions[i].group != b.instructions[i].group) {
             return false;
         }
     }

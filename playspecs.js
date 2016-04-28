@@ -63,11 +63,11 @@ var Playspecs =
 	
 	var _compiler2 = _interopRequireDefault(_compiler);
 	
-	var _playspec = __webpack_require__(3);
+	var _playspec = __webpack_require__(4);
 	
 	var _playspec2 = _interopRequireDefault(_playspec);
 	
-	var _sfa = __webpack_require__(4);
+	var _sfa = __webpack_require__(3);
 	
 	var SFA = { SFA: _sfa.SFACls, fromParseTree: _sfa.fromParseTree, resetStateID: _sfa.resetStateID };
 	exports.SFA = SFA;
@@ -557,7 +557,7 @@ var Playspecs =
 	
 	var _parser = __webpack_require__(1);
 	
-	var _sfa = __webpack_require__(4);
+	var _sfa = __webpack_require__(3);
 	
 	var DEBUG_MODE = false;
 	
@@ -1024,6 +1024,470 @@ var Playspecs =
 	    value: true
 	});
 	
+	var _slicedToArray = (function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"]) _i["return"](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError("Invalid attempt to destructure non-iterable instance"); } }; })();
+	
+	var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
+	
+	exports.resetStateID = resetStateID;
+	exports.fromParseTree = fromParseTree;
+	
+	function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) arr2[i] = arr[i]; return arr2; } else { return Array.from(arr); } }
+	
+	function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+	
+	function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+	
+	var _parser = __webpack_require__(1);
+	
+	var _compiler = __webpack_require__(2);
+	
+	var stateID = 0;
+	
+	function resetStateID() {
+	    stateID = 0;
+	}
+	
+	var SFA = (function () {
+	    function SFA() {
+	        _classCallCheck(this, SFA);
+	
+	        this.startStates = [new State()];
+	        this.acceptingStates = [];
+	    }
+	
+	    _createClass(SFA, [{
+	        key: "newState",
+	        value: function newState(optID) {
+	            return new State(optID);
+	        }
+	    }, {
+	        key: "markAccepting",
+	        value: function markAccepting(s) {
+	            //add to acceptingStates
+	            if (this.acceptingStates.indexOf(s) == -1) {
+	                this.acceptingStates.push(s);
+	            }
+	            //add accepting self-edge
+	            s.addEdge(new Edge(s, null, []));
+	            //mark accepting
+	            s.isAccepting = true;
+	        }
+	    }, {
+	        key: "markNonAccepting",
+	        value: function markNonAccepting(s) {
+	            //mark non-accepting
+	            s.isAccepting = false;
+	            if (this.acceptingStates.indexOf(s) != -1) {
+	                //remove from acceptingStates
+	                s.acceptingStates.splice(s.acceptingStates.indexOf(s), 1);
+	            }
+	        }
+	    }, {
+	        key: "getStates",
+	        value: function getStates() {
+	            var found = {};
+	            var stack = this.startStates.slice();
+	            while (stack.length) {
+	                var here = stack.pop();
+	                found[here.id] = here;
+	                for (var ek in here.edges) {
+	                    var e = here.edges[ek];
+	                    if (e.target && !(e.target.id in found)) {
+	                        stack.push(e.target);
+	                    }
+	                }
+	            }
+	            return Object.keys(found).map(function (k) {
+	                return found[k];
+	            });
+	        }
+	    }, {
+	        key: "toDot",
+	        value: function toDot() {
+	            var start = "digraph g {\n" + "  rankdir=LR;\n";
+	            var middle = this.getStates().map(function (s) {
+	                return ["  " + s.id + (" [shape=" + (s.isAccepting ? "doublecircle" : "circle") + "];")].concat(s.edges.map(function (e, i) {
+	                    return "  " + s.id + "->" + e.target.id + (" [label=\"" + i + ":" + (e.formula ? (0, _compiler.stringifyFormula)(e.formula) : "&#949;") + ":" + e.label.map(function (l) {
+	                        return l.type + "." + l.group;
+	                    }).join(",") + "\"];");
+	                })).join("\n");
+	            }).join("\n");
+	            var end = "\n}";
+	            return start + middle + end;
+	        }
+	    }, {
+	        key: "eelim",
+	        value: function eelim() {
+	            var _this = this;
+	
+	            var stack = this.startStates.slice(),
+	                seen = {};
+	            for (var sk = 0; sk < stack.length; sk++) {
+	                seen[stack[sk].id] = stack[sk];
+	            }
+	
+	            var _loop = function () {
+	                var s = stack.pop();
+	                var reachable = _defineProperty({}, s.id, s);
+	
+	                var _loop2 = function (_i) {
+	                    var e = s.edges[_i];
+	                    //e is a null transition but not an accepting null transition
+	                    if (!e.formula && !(s.isAccepting && e.target == s)) {
+	                        if (e.target.id in reachable) {
+	                            s.edges.splice(_i, 1);
+	                            _i--;
+	                            return "continue";
+	                        } else {
+	                            var _s$edges;
+	
+	                            var targetEs = e.target.edges;
+	                            var newEs = targetEs.map(function (te) {
+	                                return new Edge(te.target == e.target && te.formula == null ? s : te.target, te.formula, e.label.concat(te.label));
+	                            });
+	                            if (e.target.isAccepting && !s.isAccepting) {
+	                                _this.acceptingStates.push(s);
+	                                s.isAccepting = true;
+	                            }
+	                            (_s$edges = s.edges).splice.apply(_s$edges, [_i, 1].concat(_toConsumableArray(newEs)));
+	                        }
+	                    }
+	                    reachable[e.target.id] = e.target;
+	                    i = _i;
+	                };
+	
+	                for (var i = 0; i < s.edges.length; i++) {
+	                    var _ret2 = _loop2(i);
+	
+	                    if (_ret2 === "continue") continue;
+	                }
+	                for (var rk in reachable) {
+	                    if (!(rk in seen)) {
+	                        stack.push(reachable[rk]);
+	                        seen[rk] = reachable[rk];
+	                    }
+	                }
+	            };
+	
+	            while (stack.length) {
+	                _loop();
+	            }
+	            return this;
+	        }
+	    }, {
+	        key: "intersect",
+	        value: function intersect(b) {
+	            this.eelim();
+	            var a = this;
+	            b.eelim();
+	            var axb = new SFA();
+	            axb.startStates = [];
+	            var stack = [],
+	                states = {};
+	            for (var _i2 = 0; _i2 < a.startStates.length; _i2++) {
+	                var sa = a.startStates[_i2];
+	                for (var j = 0; j < b.startStates.length; j++) {
+	                    var sb = b.startStates[j];
+	                    stack.push([sa, sb]);
+	                    if (!(sa.id in states)) {
+	                        states[sa.id] = {};
+	                    }
+	                    var sasb = axb.newState("a" + sa.id + "x" + sb.id + "b");
+	                    axb.startStates.push(sasb);
+	                    states[sa.id][sb.id] = sasb;
+	                    if (sa.isAccepting && sb.isAccepting) {
+	                        axb.markAccepting(sasb);
+	                    }
+	                }
+	            }
+	            while (stack.length) {
+	                var _stack$pop = stack.pop();
+	
+	                var _stack$pop2 = _slicedToArray(_stack$pop, 2);
+	
+	                var sa = _stack$pop2[0];
+	                var sb = _stack$pop2[1];
+	
+	                var sab = states[sa.id][sb.id];
+	                for (var _i3 = 0; _i3 < sa.edges.length; _i3++) {
+	                    var ae = sa.edges[_i3];
+	                    var aet = ae.target;
+	                    var aeIsAcceptingSelfEdge = sa.isAccepting && aet == sa && !ae.formula;
+	                    for (var j = 0; j < sb.edges.length; j++) {
+	                        var be = sb.edges[j];
+	                        var bet = be.target;
+	                        var beIsAcceptingSelfEdge = sb.isAccepting && bet == sb && !be.formula;
+	                        var phi = null;
+	                        if (aeIsAcceptingSelfEdge != beIsAcceptingSelfEdge) {
+	                            continue;
+	                        } else if (!aeIsAcceptingSelfEdge) {
+	                            if (!ae.formula || !be.formula) {
+	                                console.error("Uneliminated non ASE epsilon transition");
+	                            }
+	                            phi = intersectFormulae(ae.formula, be.formula);
+	                            if (!phi) {
+	                                continue;
+	                            }
+	                        }
+	                        var combined = null;
+	                        if (aet.id in states && bet.id in states[aet.id]) {
+	                            combined = states[aet.id][bet.id];
+	                        } else {
+	                            combined = axb.newState("a" + aet.id + "x" + bet.id + "b");
+	                            if (!(aet.id in states)) {
+	                                states[aet.id] = {};
+	                            }
+	                            states[aet.id][bet.id] = combined;
+	                            stack.push([aet, bet]);
+	                            if (aet.isAccepting && bet.isAccepting) {
+	                                //no need for markaccepting or to check membership of combined.
+	                                //former because we'll get the accepting self edges for free
+	                                //latter because this state is by definition new
+	                                combined.isAccepting = true;
+	                                axb.acceptingStates.push(combined);
+	                            }
+	                        }
+	                        sab.addEdge(new Edge(combined, phi, ae.label.concat(be.label)));
+	                    }
+	                }
+	            }
+	            return axb;
+	        }
+	    }]);
+	
+	    return SFA;
+	})();
+	
+	exports.SFA = SFA;
+	
+	function intersectFormulae(p1, p2) {
+	    //todo: fixme: implement for real
+	    return { type: _parser.parseTypes.AND, value: "&", children: [p1, p2], range: { start: -1, end: -1 } };
+	}
+	
+	var State = (function () {
+	    function State(id) {
+	        _classCallCheck(this, State);
+	
+	        this.id = id || stateID++;
+	        this.edges = [];
+	        this.isAccepting = false;
+	    }
+	
+	    _createClass(State, [{
+	        key: "addEdge",
+	        value: function addEdge(e) {
+	            this.edges.push(e);
+	        }
+	    }, {
+	        key: "removeEdge",
+	        value: function removeEdge(e) {
+	            this.edges.splice(this.edges.indexOf(e), 1);
+	        }
+	    }]);
+	
+	    return State;
+	})();
+	
+	var Edge = function Edge(target, formula, label) {
+	    _classCallCheck(this, Edge);
+	
+	    this.target = target;
+	    this.formula = formula;
+	    this.label = label;
+	};
+	
+	function fromParseTree(tree) {
+	    var sfa = new SFA();
+	    var s = sfa.startStates[0];
+	    var outEdges = build(sfa, s, tree);
+	    var terminus = sfa.newState();
+	    for (var ek = 0; ek < outEdges.length; ek++) {
+	        var e = outEdges[ek];
+	        e.target = terminus;
+	    }
+	    sfa.markAccepting(terminus);
+	    return sfa;
+	}
+	
+	function build(_x, _x2, _x3) {
+	    var _again = true;
+	
+	    _function: while (_again) {
+	        var sfa = _x,
+	            seedState = _x2,
+	            tree = _x3;
+	        e = aes = s = ek = e = greedy = min = max = phi = cloned = next = cloned = next = edges = out = edges = out = edges = ek = _e = e = e = edges = ek = _e2 = s = es = s = captureStart = es = ek = e = a = b = aes = bes = a = b = axb = oldAccepting = startk = outEdges = acck = acc = ei = undefined;
+	        _again = false;
+	
+	        if ((0, _parser.isPropositional)(tree) && tree.type != _parser.parseTypes.CAPTURE) {
+	            var e = new Edge(null, tree, []);
+	            seedState.addEdge(e);
+	            return [e];
+	        } else if (tree.type == _parser.parseTypes.CONCATENATION) {
+	            var aes = build(sfa, seedState, tree.children[0]);
+	            var s = sfa.newState();
+	            for (var ek = 0; ek < aes.length; ek++) {
+	                var e = aes[ek];
+	                e.target = s;
+	            }
+	            _x = sfa;
+	            _x2 = s;
+	            _x3 = tree.children[1];
+	            _again = true;
+	            continue _function;
+	        } else if (tree.type == _parser.parseTypes.REPETITION) {
+	            var greedy = tree.value.greedy;
+	            var min = tree.value.lowerBound;
+	            var max = tree.value.upperBound;
+	            var phi = tree.children[0];
+	            if (min > 0) {
+	                var cloned = (0, _parser.cloneTree)(tree);
+	                cloned.value.lowerBound--;
+	                if (cloned.value.upperBound != "$END") {
+	                    cloned.value.upperBound--;
+	                }
+	                var next = {
+	                    type: _parser.parseTypes.CONCATENATION,
+	                    value: ",",
+	                    children: [(0, _parser.cloneTree)(phi), cloned],
+	                    range: { start: cloned.start, end: cloned.end }
+	                };
+	                _x = sfa;
+	                _x2 = seedState;
+	                _x3 = next;
+	                _again = true;
+	                continue _function;
+	            } else if (max != "$END") {
+	                var cloned = (0, _parser.cloneTree)(tree);
+	                cloned.value.upperBound--;
+	                var next = {
+	                    type: _parser.parseTypes.CONCATENATION,
+	                    value: ",",
+	                    children: [(0, _parser.cloneTree)(phi), cloned],
+	                    range: { start: cloned.start, end: cloned.end }
+	                };
+	                //Lots of duplication here when only orderings are changed. Not so proud of it
+	                //but let's just make sure it's working first.
+	                if (greedy) {
+	                    var edges = [];
+	                    if (max == 0) {
+	                        edges = edges.concat([new Edge(null, phi, [])]);
+	                    } else {
+	                        edges = edges.concat(build(sfa, seedState, next));
+	                    }
+	                    var out = new Edge(null, null, []);
+	                    seedState.addEdge(out);
+	                    edges.push(out);
+	                    return edges;
+	                } else {
+	                    var edges = [];
+	                    var out = new Edge(null, null, []);
+	                    seedState.addEdge(out);
+	                    edges.push(out);
+	                    if (max == 1) {
+	                        edges = edges.concat([new Edge(null, phi, [])]);
+	                    } else {
+	                        edges = edges.concat(build(sfa, seedState, next));
+	                    }
+	                    return edges;
+	                }
+	            } else {
+	                if (greedy) {
+	                    var edges = build(sfa, seedState, phi);
+	                    for (var ek = 0; ek < edges.length; ek++) {
+	                        var _e = edges[ek];
+	                        _e.target = seedState;
+	                    }
+	                    var e = new Edge(null, null, []);
+	                    seedState.addEdge(e);
+	                    return [e];
+	                } else {
+	                    var e = new Edge(null, null, []);
+	                    seedState.addEdge(e);
+	                    var edges = build(sfa, seedState, phi);
+	                    for (var ek = 0; ek < edges.length; ek++) {
+	                        var _e2 = edges[ek];
+	                        _e2.target = seedState;
+	                    }
+	                    return [e];
+	                }
+	            }
+	        } else if (tree.type == _parser.parseTypes.GROUP) {
+	            var s = sfa.newState();
+	            seedState.addEdge(new Edge(s, null, []));
+	            var es = build(sfa, s, tree.children[0]);
+	            return es;
+	        } else if (tree.type == _parser.parseTypes.CAPTURE) {
+	            var s = sfa.newState();
+	            //hack: we store a link from the end to its corresponding start
+	            //so that the correct captureID can be propagated to the "end"
+	            //from the "start" during compilation
+	            var captureStart = { type: "start-capture", group: tree.value.group == "$implicit" ? s.id : tree.value.group };
+	            seedState.addEdge(new Edge(s, null, [captureStart]));
+	            var es = build(sfa, s, tree.children[0]);
+	            for (var ek = 0; ek < es.length; ek++) {
+	                var e = es[ek];
+	                e.label.push({
+	                    type: "end-capture",
+	                    group: tree.value.group == "$implicit" ? s.id : tree.value.group,
+	                    start: captureStart
+	                });
+	            }
+	            return es;
+	        } else if (tree.type == _parser.parseTypes.ALTERNATION) {
+	            var a = sfa.newState();
+	            var b = sfa.newState();
+	            seedState.addEdge(new Edge(a, null, []));
+	            seedState.addEdge(new Edge(b, null, []));
+	            var aes = build(sfa, a, tree.children[0]);
+	            var bes = build(sfa, b, tree.children[1]);
+	            return aes.concat(bes);
+	        } else if (tree.type == _parser.parseTypes.INTERSECTION) {
+	            var a = fromParseTree(tree.children[0]);
+	            var b = fromParseTree(tree.children[1]);
+	            var axb = a.intersect(b);
+	            var oldAccepting = axb.acceptingStates.slice();
+	            //console.log("Supposed accepting:", oldAccepting, "actual",
+	            //    axb.getStates().filter((s) => s.isAccepting)
+	            //);
+	            for (var startk = 0; startk < axb.startStates.length; startk++) {
+	                seedState.addEdge(new Edge(axb.startStates[startk], null, []));
+	            }
+	            var outEdges = [];
+	            for (var acck = 0; acck < oldAccepting.length; acck++) {
+	                var acc = oldAccepting[acck];
+	                sfa.markNonAccepting(acc);
+	                //find the self-edge and repoint it towards nothing, including it in outEdges
+	                for (var ei = 0; ei < acc.edges.length; ei++) {
+	                    if (acc.edges[ei].target == acc && !acc.edges[ei].formula) {
+	                        acc.edges[ei].target = null;
+	                        outEdges.push(acc.edges[ei]);
+	                    }
+	                }
+	            }
+	
+	            //console.log("POST supposed accepting:", sfa.acceptingStates, "actual",
+	            //    sfa.getStates().filter((s) => s.isAccepting)
+	            //);
+	
+	            return outEdges;
+	        } else {
+	            throw "Not yet implemented";
+	        }
+	    }
+	}
+
+/***/ },
+/* 4 */
+/***/ function(module, exports, __webpack_require__) {
+
+	"use strict";
+	
+	Object.defineProperty(exports, "__esModule", {
+	    value: true
+	});
+	
 	var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
 	
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
@@ -1303,7 +1767,7 @@ var Playspecs =
 	        return false;
 	    }
 	    for (var i = 0; i < a.instructions.length; i++) {
-	        if (a[i].type != b[i].type || a[i].index != b[i].index || a[i].group != b[i].group) {
+	        if (a.instructions[i].type != b.instructions[i].type || a.instructions[i].index != b.instructions[i].index || a.instructions[i].group != b.instructions[i].group) {
 	            return false;
 	        }
 	    }
@@ -1761,470 +2225,6 @@ var Playspecs =
 	})();
 
 	module.exports = exports["default"];
-
-/***/ },
-/* 4 */
-/***/ function(module, exports, __webpack_require__) {
-
-	"use strict";
-	
-	Object.defineProperty(exports, "__esModule", {
-	    value: true
-	});
-	
-	var _slicedToArray = (function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"]) _i["return"](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError("Invalid attempt to destructure non-iterable instance"); } }; })();
-	
-	var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
-	
-	exports.resetStateID = resetStateID;
-	exports.fromParseTree = fromParseTree;
-	
-	function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) arr2[i] = arr[i]; return arr2; } else { return Array.from(arr); } }
-	
-	function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
-	
-	function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-	
-	var _parser = __webpack_require__(1);
-	
-	var _compiler = __webpack_require__(2);
-	
-	var stateID = 0;
-	
-	function resetStateID() {
-	    stateID = 0;
-	}
-	
-	var SFA = (function () {
-	    function SFA() {
-	        _classCallCheck(this, SFA);
-	
-	        this.startStates = [new State()];
-	        this.acceptingStates = [];
-	    }
-	
-	    _createClass(SFA, [{
-	        key: "newState",
-	        value: function newState(optID) {
-	            return new State(optID);
-	        }
-	    }, {
-	        key: "markAccepting",
-	        value: function markAccepting(s) {
-	            //add to acceptingStates
-	            if (this.acceptingStates.indexOf(s) == -1) {
-	                this.acceptingStates.push(s);
-	            }
-	            //add accepting self-edge
-	            s.addEdge(new Edge(s, null, []));
-	            //mark accepting
-	            s.isAccepting = true;
-	        }
-	    }, {
-	        key: "markNonAccepting",
-	        value: function markNonAccepting(s) {
-	            //mark non-accepting
-	            s.isAccepting = false;
-	            if (this.acceptingStates.indexOf(s) != -1) {
-	                //remove from acceptingStates
-	                s.acceptingStates.splice(s.acceptingStates.indexOf(s), 1);
-	            }
-	        }
-	    }, {
-	        key: "getStates",
-	        value: function getStates() {
-	            var found = {};
-	            var stack = this.startStates.slice();
-	            while (stack.length) {
-	                var here = stack.pop();
-	                found[here.id] = here;
-	                for (var ek in here.edges) {
-	                    var e = here.edges[ek];
-	                    if (e.target && !(e.target.id in found)) {
-	                        stack.push(e.target);
-	                    }
-	                }
-	            }
-	            return Object.keys(found).map(function (k) {
-	                return found[k];
-	            });
-	        }
-	    }, {
-	        key: "toDot",
-	        value: function toDot() {
-	            var start = "digraph g {\n" + "  rankdir=LR;\n";
-	            var middle = this.getStates().map(function (s) {
-	                return ["  " + s.id + (" [shape=" + (s.isAccepting ? "doublecircle" : "circle") + "];")].concat(s.edges.map(function (e, i) {
-	                    return "  " + s.id + "->" + e.target.id + (" [label=\"" + i + ":" + (e.formula ? (0, _compiler.stringifyFormula)(e.formula) : "&#949;") + ":" + e.label.map(function (l) {
-	                        return l.type + "." + l.group;
-	                    }).join(",") + "\"];");
-	                })).join("\n");
-	            }).join("\n");
-	            var end = "\n}";
-	            return start + middle + end;
-	        }
-	    }, {
-	        key: "eelim",
-	        value: function eelim() {
-	            var _this = this;
-	
-	            var stack = this.startStates.slice(),
-	                seen = {};
-	            for (var sk = 0; sk < stack.length; sk++) {
-	                seen[stack[sk].id] = stack[sk];
-	            }
-	
-	            var _loop = function () {
-	                var s = stack.pop();
-	                var reachable = _defineProperty({}, s.id, s);
-	
-	                var _loop2 = function (_i) {
-	                    var e = s.edges[_i];
-	                    //e is a null transition but not an accepting null transition
-	                    if (!e.formula && !(s.isAccepting && e.target == s)) {
-	                        if (e.target.id in reachable) {
-	                            s.edges.splice(_i, 1);
-	                            _i--;
-	                            return "continue";
-	                        } else {
-	                            var _s$edges;
-	
-	                            var targetEs = e.target.edges;
-	                            var newEs = targetEs.map(function (te) {
-	                                return new Edge(te.target == e.target && te.formula == null ? s : te.target, te.formula, e.label.concat(te.label));
-	                            });
-	                            if (e.target.isAccepting && !s.isAccepting) {
-	                                _this.acceptingStates.push(s);
-	                                s.isAccepting = true;
-	                            }
-	                            (_s$edges = s.edges).splice.apply(_s$edges, [_i, 1].concat(_toConsumableArray(newEs)));
-	                        }
-	                    }
-	                    reachable[e.target.id] = e.target;
-	                    i = _i;
-	                };
-	
-	                for (var i = 0; i < s.edges.length; i++) {
-	                    var _ret2 = _loop2(i);
-	
-	                    if (_ret2 === "continue") continue;
-	                }
-	                for (var rk in reachable) {
-	                    if (!(rk in seen)) {
-	                        stack.push(reachable[rk]);
-	                        seen[rk] = reachable[rk];
-	                    }
-	                }
-	            };
-	
-	            while (stack.length) {
-	                _loop();
-	            }
-	            return this;
-	        }
-	    }, {
-	        key: "intersect",
-	        value: function intersect(b) {
-	            this.eelim();
-	            var a = this;
-	            b.eelim();
-	            var axb = new SFA();
-	            axb.startStates = [];
-	            var stack = [],
-	                states = {};
-	            for (var _i2 = 0; _i2 < a.startStates.length; _i2++) {
-	                var sa = a.startStates[_i2];
-	                for (var j = 0; j < b.startStates.length; j++) {
-	                    var sb = b.startStates[j];
-	                    stack.push([sa, sb]);
-	                    if (!(sa.id in states)) {
-	                        states[sa.id] = {};
-	                    }
-	                    var sasb = axb.newState("a" + sa.id + "x" + sb.id + "b");
-	                    axb.startStates.push(sasb);
-	                    states[sa.id][sb.id] = sasb;
-	                    if (sa.isAccepting && sb.isAccepting) {
-	                        axb.markAccepting(sasb);
-	                    }
-	                }
-	            }
-	            while (stack.length) {
-	                var _stack$pop = stack.pop();
-	
-	                var _stack$pop2 = _slicedToArray(_stack$pop, 2);
-	
-	                var sa = _stack$pop2[0];
-	                var sb = _stack$pop2[1];
-	
-	                var sab = states[sa.id][sb.id];
-	                for (var _i3 = 0; _i3 < sa.edges.length; _i3++) {
-	                    var ae = sa.edges[_i3];
-	                    var aet = ae.target;
-	                    var aeIsAcceptingSelfEdge = sa.isAccepting && aet == sa && !ae.formula;
-	                    for (var j = 0; j < sb.edges.length; j++) {
-	                        var be = sb.edges[j];
-	                        var bet = be.target;
-	                        var beIsAcceptingSelfEdge = sb.isAccepting && bet == sb && !be.formula;
-	                        var phi = null;
-	                        if (aeIsAcceptingSelfEdge != beIsAcceptingSelfEdge) {
-	                            continue;
-	                        } else if (!aeIsAcceptingSelfEdge) {
-	                            if (!ae.formula || !be.formula) {
-	                                console.error("Uneliminated non ASE epsilon transition");
-	                            }
-	                            phi = intersectFormulae(ae.formula, be.formula);
-	                            if (!phi) {
-	                                continue;
-	                            }
-	                        }
-	                        var combined = null;
-	                        if (aet.id in states && bet.id in states[aet.id]) {
-	                            combined = states[aet.id][bet.id];
-	                        } else {
-	                            combined = axb.newState("a" + aet.id + "x" + bet.id + "b");
-	                            if (!(aet.id in states)) {
-	                                states[aet.id] = {};
-	                            }
-	                            states[aet.id][bet.id] = combined;
-	                            stack.push([aet, bet]);
-	                            if (aet.isAccepting && bet.isAccepting) {
-	                                //no need for markaccepting or to check membership of combined.
-	                                //former because we'll get the accepting self edges for free
-	                                //latter because this state is by definition new
-	                                combined.isAccepting = true;
-	                                axb.acceptingStates.push(combined);
-	                            }
-	                        }
-	                        sab.addEdge(new Edge(combined, phi, ae.label.concat(be.label)));
-	                    }
-	                }
-	            }
-	            return axb;
-	        }
-	    }]);
-	
-	    return SFA;
-	})();
-	
-	exports.SFA = SFA;
-	
-	function intersectFormulae(p1, p2) {
-	    //todo: fixme: implement for real
-	    return { type: _parser.parseTypes.AND, value: "&", children: [p1, p2], range: { start: -1, end: -1 } };
-	}
-	
-	var State = (function () {
-	    function State(id) {
-	        _classCallCheck(this, State);
-	
-	        this.id = id || stateID++;
-	        this.edges = [];
-	        this.isAccepting = false;
-	    }
-	
-	    _createClass(State, [{
-	        key: "addEdge",
-	        value: function addEdge(e) {
-	            this.edges.push(e);
-	        }
-	    }, {
-	        key: "removeEdge",
-	        value: function removeEdge(e) {
-	            this.edges.splice(this.edges.indexOf(e), 1);
-	        }
-	    }]);
-	
-	    return State;
-	})();
-	
-	var Edge = function Edge(target, formula, label) {
-	    _classCallCheck(this, Edge);
-	
-	    this.target = target;
-	    this.formula = formula;
-	    this.label = label;
-	};
-	
-	function fromParseTree(tree) {
-	    var sfa = new SFA();
-	    var s = sfa.startStates[0];
-	    var outEdges = build(sfa, s, tree);
-	    var terminus = sfa.newState();
-	    for (var ek = 0; ek < outEdges.length; ek++) {
-	        var e = outEdges[ek];
-	        e.target = terminus;
-	    }
-	    sfa.markAccepting(terminus);
-	    return sfa;
-	}
-	
-	function build(_x, _x2, _x3) {
-	    var _again = true;
-	
-	    _function: while (_again) {
-	        var sfa = _x,
-	            seedState = _x2,
-	            tree = _x3;
-	        e = aes = s = ek = e = greedy = min = max = phi = cloned = next = cloned = next = edges = out = edges = out = edges = ek = _e = e = e = edges = ek = _e2 = s = es = s = captureStart = es = ek = e = a = b = aes = bes = a = b = axb = oldAccepting = startk = outEdges = acck = acc = ei = undefined;
-	        _again = false;
-	
-	        if ((0, _parser.isPropositional)(tree) && tree.type != _parser.parseTypes.CAPTURE) {
-	            var e = new Edge(null, tree, []);
-	            seedState.addEdge(e);
-	            return [e];
-	        } else if (tree.type == _parser.parseTypes.CONCATENATION) {
-	            var aes = build(sfa, seedState, tree.children[0]);
-	            var s = sfa.newState();
-	            for (var ek = 0; ek < aes.length; ek++) {
-	                var e = aes[ek];
-	                e.target = s;
-	            }
-	            _x = sfa;
-	            _x2 = s;
-	            _x3 = tree.children[1];
-	            _again = true;
-	            continue _function;
-	        } else if (tree.type == _parser.parseTypes.REPETITION) {
-	            var greedy = tree.value.greedy;
-	            var min = tree.value.lowerBound;
-	            var max = tree.value.upperBound;
-	            var phi = tree.children[0];
-	            if (min > 0) {
-	                var cloned = (0, _parser.cloneTree)(tree);
-	                cloned.value.lowerBound--;
-	                if (cloned.value.upperBound != "$END") {
-	                    cloned.value.upperBound--;
-	                }
-	                var next = {
-	                    type: _parser.parseTypes.CONCATENATION,
-	                    value: ",",
-	                    children: [(0, _parser.cloneTree)(phi), cloned],
-	                    range: { start: cloned.start, end: cloned.end }
-	                };
-	                _x = sfa;
-	                _x2 = seedState;
-	                _x3 = next;
-	                _again = true;
-	                continue _function;
-	            } else if (max != "$END") {
-	                var cloned = (0, _parser.cloneTree)(tree);
-	                cloned.value.upperBound--;
-	                var next = {
-	                    type: _parser.parseTypes.CONCATENATION,
-	                    value: ",",
-	                    children: [(0, _parser.cloneTree)(phi), cloned],
-	                    range: { start: cloned.start, end: cloned.end }
-	                };
-	                //Lots of duplication here when only orderings are changed. Not so proud of it
-	                //but let's just make sure it's working first.
-	                if (greedy) {
-	                    var edges = [];
-	                    if (max == 0) {
-	                        edges = edges.concat([new Edge(null, phi, [])]);
-	                    } else {
-	                        edges = edges.concat(build(sfa, seedState, next));
-	                    }
-	                    var out = new Edge(null, null, []);
-	                    seedState.addEdge(out);
-	                    edges.push(out);
-	                    return edges;
-	                } else {
-	                    var edges = [];
-	                    var out = new Edge(null, null, []);
-	                    seedState.addEdge(out);
-	                    edges.push(out);
-	                    if (max == 1) {
-	                        edges = edges.concat([new Edge(null, phi, [])]);
-	                    } else {
-	                        edges = edges.concat(build(sfa, seedState, next));
-	                    }
-	                    return edges;
-	                }
-	            } else {
-	                if (greedy) {
-	                    var edges = build(sfa, seedState, phi);
-	                    for (var ek = 0; ek < edges.length; ek++) {
-	                        var _e = edges[ek];
-	                        _e.target = seedState;
-	                    }
-	                    var e = new Edge(null, null, []);
-	                    seedState.addEdge(e);
-	                    return [e];
-	                } else {
-	                    var e = new Edge(null, null, []);
-	                    seedState.addEdge(e);
-	                    var edges = build(sfa, seedState, phi);
-	                    for (var ek = 0; ek < edges.length; ek++) {
-	                        var _e2 = edges[ek];
-	                        _e2.target = seedState;
-	                    }
-	                    return [e];
-	                }
-	            }
-	        } else if (tree.type == _parser.parseTypes.GROUP) {
-	            var s = sfa.newState();
-	            seedState.addEdge(new Edge(s, null, []));
-	            var es = build(sfa, s, tree.children[0]);
-	            return es;
-	        } else if (tree.type == _parser.parseTypes.CAPTURE) {
-	            var s = sfa.newState();
-	            //hack: we store a link from the end to its corresponding start
-	            //so that the correct captureID can be propagated to the "end"
-	            //from the "start" during compilation
-	            var captureStart = { type: "start-capture", group: tree.value.group == "$implicit" ? s.id : tree.value.group };
-	            seedState.addEdge(new Edge(s, null, [captureStart]));
-	            var es = build(sfa, s, tree.children[0]);
-	            for (var ek = 0; ek < es.length; ek++) {
-	                var e = es[ek];
-	                e.label.push({
-	                    type: "end-capture",
-	                    group: tree.value.group == "$implicit" ? s.id : tree.value.group,
-	                    start: captureStart
-	                });
-	            }
-	            return es;
-	        } else if (tree.type == _parser.parseTypes.ALTERNATION) {
-	            var a = sfa.newState();
-	            var b = sfa.newState();
-	            seedState.addEdge(new Edge(a, null, []));
-	            seedState.addEdge(new Edge(b, null, []));
-	            var aes = build(sfa, a, tree.children[0]);
-	            var bes = build(sfa, b, tree.children[1]);
-	            return aes.concat(bes);
-	        } else if (tree.type == _parser.parseTypes.INTERSECTION) {
-	            var a = fromParseTree(tree.children[0]);
-	            var b = fromParseTree(tree.children[1]);
-	            var axb = a.intersect(b);
-	            var oldAccepting = axb.acceptingStates.slice();
-	            //console.log("Supposed accepting:", oldAccepting, "actual",
-	            //    axb.getStates().filter((s) => s.isAccepting)
-	            //);
-	            for (var startk = 0; startk < axb.startStates.length; startk++) {
-	                seedState.addEdge(new Edge(axb.startStates[startk], null, []));
-	            }
-	            var outEdges = [];
-	            for (var acck = 0; acck < oldAccepting.length; acck++) {
-	                var acc = oldAccepting[acck];
-	                sfa.markNonAccepting(acc);
-	                //find the self-edge and repoint it towards nothing, including it in outEdges
-	                for (var ei = 0; ei < acc.edges.length; ei++) {
-	                    if (acc.edges[ei].target == acc && !acc.edges[ei].formula) {
-	                        acc.edges[ei].target = null;
-	                        outEdges.push(acc.edges[ei]);
-	                    }
-	                }
-	            }
-	
-	            //console.log("POST supposed accepting:", sfa.acceptingStates, "actual",
-	            //    sfa.getStates().filter((s) => s.isAccepting)
-	            //);
-	
-	            return outEdges;
-	        } else {
-	            throw "Not yet implemented";
-	        }
-	    }
-	}
 
 /***/ }
 /******/ ]);

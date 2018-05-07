@@ -1,27 +1,30 @@
-/* @flow */
-
-import {parseTypes, isPropositional, BOUND_INFINITE} from "./parser";
-import {fromParseTree,resetStateID} from "./sfa";
-
-type
-Instruction =
-    {type: "check", formula: ParseTree, index? : number, source? : "root" | ParseTree} |
-    {type: "jump", target: number, index? : number, source? : "root" | ParseTree} |
-    {type: "split", left: number, right: number, index? : number, source? : "root" | ParseTree} |
-    {type: "match", index? : number, source? : "root" | ParseTree} |
-    {type: "start", group: string | number, captureID: number, index? : number, source? : "root" | ParseTree} |
-    {type: "end", group: string | number, captureID: number, index? : number, source? : "root" | ParseTree};
-type
-Program = Array < Instruction >;
+import { parseTypes, isPropositional, BOUND_INFINITE } from "./parser";
+import { fromParseTree, resetStateID, SFA, State, Edge } from "./sfa";
+import { TokenDefinition, ParseTree } from "./types";
+type Jump = { type: "jump", target: number | null, index?: number, source?: "root" | ParseTree };
+type Split = { type: "split", left: number, right: number | null, index?: number, source?: "root" | ParseTree };
+type Start = { type: "start", group: string | number, captureID: number, index?: number, source?: "root" | ParseTree };
+type Match = { type: "match", index?: number, source?: "root" | ParseTree };
+type End = { type: "end", group: string | number, captureID: number, index?: number, source?: "root" | ParseTree };
+type Check = { type: "check", formula: ParseTree, index?: number, source?: "root" | ParseTree };
+type Instruction =
+    Check |
+    Jump |
+    Split |
+    Match |
+    Start |
+    End;
+export type Program = Array<Instruction>;
 
 const DEBUG_MODE = false;
 
-export default class Compiler {
-    constructor(_ctx) {
+export class Compiler {
+    captureIdx: number;
+    constructor(_tokenDefs: Array<TokenDefinition>) {
         this.captureIdx = 0;
     }
 
-    compileTree(tree:ParseTree, idx:number):Program {
+    compileTree(tree: ParseTree, idx: number): Program {
         //console.log(`compile ${tree.type} at index ${idx}`);
         if (tree.type == parseTypes.GROUP) {
             return this.compileTree(tree.children[0], idx);
@@ -29,9 +32,9 @@ export default class Compiler {
         if (tree.type == parseTypes.CAPTURE) {
             const captureID = this.captureIdx;
             const group = tree.value.group == "$implicit" ? captureID : tree.value.group;
-            const start = {type: "start", group: group, captureID: captureID, index: idx, source: tree};
+            const start = { type: "start", group: group, captureID: captureID, index: idx, source: tree };
             this.captureIdx++;
-            const children = this.compileTree(tree.children[0], idx + 1);
+            const children: Array<Instruction> = this.compileTree(tree.children[0], idx + 1);
             const end = {
                 type: "end",
                 group: group,
@@ -39,11 +42,11 @@ export default class Compiler {
                 index: idx + 1 + children.length,
                 source: tree
             };
-            return [start].concat(children).concat([end]);
+            return ([start] as Program).concat(children).concat([end] as Program);
         }
         if (isPropositional(tree)) {
             //console.log("tree " + JSON.stringify(tree) + ":" + tree.type + " is propositional");
-            return [{type: "check", formula: tree, index: idx, source: tree}];
+            return [{ type: "check", formula: tree, index: idx, source: tree }];
         }
         if (tree.type == parseTypes.CONCATENATION) {
             const aIdx = idx;
@@ -59,11 +62,11 @@ export default class Compiler {
             const left = this.compileTree(tree.children[0], aIdx);
             const bIdx = aIdx + left.length + 1; // Leave room for jump after left
             // now we can define branch, which goes before left:
-            const branch = [{type: "split", left: aIdx, right: bIdx, index: idx, source: tree}];
+            const branch: Program = [{ type: "split", left: aIdx, right: bIdx, index: idx, source: tree }];
             // right:
             const right = this.compileTree(tree.children[1], bIdx);
             const cIdx = bIdx + right.length;
-            const jump = [{type: "jump", target: cIdx, index: aIdx + left.length, source: tree}];
+            const jump: Program = [{ type: "jump", target: cIdx, index: aIdx + left.length, source: tree }];
             return branch.concat(left).concat(jump).concat(right);
         }
         if (tree.type == parseTypes.INTERSECTION) {
@@ -99,7 +102,7 @@ export default class Compiler {
                     optionals.push(phiPgm);
                 }
                 //idx is now just past the end of all the "optionals".
-                let repetition = [];
+                let repetition: Program = [];
                 for (let i = 0; i < optionals.length; i++) {
                     repetition.push({
                         type: "split",
@@ -118,10 +121,10 @@ export default class Compiler {
                 const bIdx = aIdx + 1;
                 // then put in B
                 const b = this.compileTree(phi, bIdx);
-                const jump = [{type: "jump", target: aIdx, index: bIdx + b.length, source: tree}];
+                const jump: Program = [{ type: "jump", target: aIdx, index: bIdx + b.length, source: tree }];
                 // then label C
                 const cIdx = bIdx + b.length + 1;
-                const branch = [{
+                const branch: Program = [{
                     type: "split",
                     left: (greedy ? bIdx : cIdx),
                     right: (greedy ? cIdx : bIdx),
@@ -134,9 +137,9 @@ export default class Compiler {
         throw new Error("Can't compile " + JSON.stringify(tree));
     }
 
-    compileSFA(sfa:SFA, idx:number):Program {
-        let stateStarts = {}, endJumps = [];
-        let pgm = [];
+    compileSFA(sfa: SFA, idx: number): Program {
+        let stateStarts = {}, endJumps: Jump[] = [];
+        let pgm: Program = [];
         for (let i = 0; i < sfa.startStates.length; i++) {
             const start = sfa.startStates[i];
             const startPgm = this.compileSFA_(start, idx, stateStarts, endJumps);
@@ -149,41 +152,44 @@ export default class Compiler {
         return pgm;
     }
 
-    compileSFA_(state, idx, stateStarts, endJumps) {
+    compileSFA_(state: State, idx: number, stateStarts: { [key: string]: number }, endJumps: Jump[]): Program {
         if (state.id in stateStarts) {
             return [{
                 type: "jump",
                 target: stateStarts[state.id],
                 index: idx,
-                source: {type: "state", value: state.id}
-            }];
+                source: { type: "state", value: state.id }
+            }] as Program;
         }
         stateStarts[state.id] = idx;
         if (state.edges.length == 0) {
             if (state.isAccepting) {
-                const jump = {
+                const jump: Jump = {
                     type: "jump",
                     target: null,
                     index: idx,
-                    source: {type: "state", value: state.id}
+                    source: { type: "state", value: state.id, children: [], range: { start: -1, end: -1 } }
                 };
                 endJumps.push(jump);
-                return [jump];
+                return [jump] as Program;
             } else {
                 throw new Error("Compiling an SFA state with no outgoing edges");
             }
         } else {
-            let pgm = [];
+            let pgm: Program = [];
             for (let i = 0; i < state.edges.length - 1; i++) {
                 const edge = state.edges[i];
-                const edgeSplit = {
+                const edgeSplit: Split = {
                     type: "split",
                     left: idx + 1,
                     right: null,
                     index: idx,
-                    source: {type: "state", value: `${state.id}.${i}`}
+                    source: {
+                        type: "state", value: `${state.id}.${i}`,
+                        children: [], range: { start: -1, end: -1 }
+                    }
                 };
-                const edgePgm = [edgeSplit].concat(
+                const edgePgm: Program = ([edgeSplit] as Program).concat(
                     this.compileSFA_edge(state, edge, idx + 1, stateStarts, endJumps)
                 );
                 pgm = pgm.concat(edgePgm);
@@ -196,50 +202,56 @@ export default class Compiler {
         }
     }
 
-    compileSFA_edge(state, edge, idx, stateStarts, endJumps) {
+    compileSFA_edge(state: State, edge: Edge, idx: number, stateStarts: { [id: string]: number }, endJumps: Jump[]): Program {
         //accepting self-edges need to be treated specially so they don't jump right back
         //to the parent state.
-        const edgePgm = this.compileSFA_edgeLabel(state, edge, idx);
+        const edgePgm: Program = this.compileSFA_edgeLabel(state, edge, idx);
         idx += edgePgm.length;
         if (state.isAccepting && edge.target == state && !edge.formula) {
-            const jump = {
+            const jump: Jump = {
                 type: "jump",
                 target: null,
                 index: idx,
-                source: {type: "edge", value: `${state.id}->${edge.target.id}`}
+                source: {
+                    type: "edge", value: `${state.id}->${edge.target.id}`,
+                    children: [], range: { start: -1, end: -1 }
+                }
             };
             endJumps.push(jump);
-            return edgePgm.concat([jump]);
+            return edgePgm.concat([jump] as Program);
         } else if (edge.formula) {
             return edgePgm.concat([{
                 type: "check",
                 formula: edge.formula,
                 index: idx,
-                source: {type: "edge", value: `${state.id}->${edge.target.id}`}
-            }]).concat(
-                this.compileSFA_(edge.target, idx + 1, stateStarts, endJumps)
+                source: { type: "edge", value: `${state.id}->${edge.target!.id}` }
+            }] as Program).concat(
+                this.compileSFA_(edge.target!, idx + 1, stateStarts, endJumps)
             );
         } else {
             return edgePgm.concat(
-                this.compileSFA_(edge.target, idx, stateStarts, endJumps)
+                this.compileSFA_(edge.target!, idx, stateStarts, endJumps)
             );
         }
     }
 
-    compileSFA_edgeLabel(state, edge, idx) {
-        let pgm = [];
+    compileSFA_edgeLabel(state: State, edge: Edge, idx: number): Program {
+        let pgm: Program = [];
         for (let i = 0; i < edge.label.length; i++) {
             const l = edge.label[i];
             if (l.type == "start-capture") {
                 const captureID = this.captureIdx;
                 const group = l.group;
                 l.captureID = captureID;
-                const start = {
+                const start: Start = {
                     type: "start",
                     group: group,
                     captureID: captureID,
                     index: idx,
-                    source: {type: "edge", value: `${state.id}->${edge.target.id}`}
+                    source: {
+                        type: "edge", value: `${state.id}->${edge.target!.id}`,
+                        children: [], range: { start: -1, end: -1 }
+                    }
                 };
                 this.captureIdx++;
                 pgm.push(start);
@@ -247,12 +259,15 @@ export default class Compiler {
             } else if (l.type == "end-capture") {
                 const captureID = l.start.captureID;
                 const group = l.group;
-                const end = {
+                const end: End = {
                     type: "end",
                     group: group,
                     captureID: captureID,
                     index: idx,
-                    source: {type: "edge", value: `${state.id}->${edge.target.id}`}
+                    source: {
+                        type: "edge", value: `${state.id}->${edge.target!.id}`,
+                        children: [], range: { start: -1, end: -1 }
+                    }
                 };
                 pgm.push(end);
                 idx++;
@@ -261,13 +276,13 @@ export default class Compiler {
         return pgm;
     }
 
-    compile(tree:ParseTree, debug:bool = false):Program {
-        if (!tree.type && tree.tree && tree.errors && tree.remainder) {
-            throw new Error(
-                "Received a ParseResult, but expected a ParseTree." +
-                "Call compile() with the .tree element of " + tree
-            );
-        }
+    compile(tree: ParseTree, debug: boolean = false): Program {
+        // if (!tree.type && tree.tree && tree.errors && tree.remainder) {
+        // throw new Error(
+        // "Received a ParseResult, but expected a ParseTree." +
+        // "Call compile() with the .tree element of " + tree
+        // );
+        // }
         if (!this.validateParseTree(tree)) {
             throw new Error("Parse tree did not represent a valid program");
         }
@@ -275,21 +290,21 @@ export default class Compiler {
         this.captureIdx = 0;
         // We preface every program with "true .." so that all Playspecs are effectively start-anchored.
         // This is as per https://swtch.com/~rsc/regexp/regexp2.html
-        const preface = [
-            {type: "split", left: 3, right: 1, index: 0, source: "root"},
+        const preface: Program = [
+            { type: "split", left: 3, right: 1, index: 0, source: "root" },
             {
                 type: "check",
                 formula: {
                     type: parseTypes.TRUE,
                     value: true,
                     children: [],
-                    range: {start: 0, end: 0}
+                    range: { start: 0, end: 0 }
                 },
                 index: 1,
                 source: "root"
             },
-            {type: "jump", target: 0, index: 2, source: "root"},
-            {type: "start", group: "$root", captureID: -1, index: 3, source: "root"}
+            { type: "jump", target: 0, index: 2, source: "root" },
+            { type: "start", group: "$root", captureID: -1, index: 3, source: "root" }
         ];
         const body = this.compileTree(tree, preface.length);
         const result = preface.concat(body).concat([
@@ -320,7 +335,7 @@ export default class Compiler {
         return result;
     }
 
-    validateParseTree(parseTree:ParseTree):bool {
+    validateParseTree(parseTree: ParseTree): boolean {
         if (!DEBUG_MODE) {
             return true;
         }
@@ -332,12 +347,12 @@ export default class Compiler {
         return true;
     }
 
-    anyCapturesInsidePropositions(parent:ParseTree) {
+    anyCapturesInsidePropositions(parent: ParseTree) {
         const prop = isPropositional(parent);
         for (let ci = 0; ci < parent.children.length; ci++) {
             const child = parent.children[ci];
             if (prop && child.type == parseTypes.CAPTURE) {
-                console.log(`Can't put a capturing group inside of a propositional term: ${this.stringifyFormula(parent)}!`);
+                console.log(`Can't put a capturing group inside of a propositional term: ${stringifyFormula(parent)}!`);
                 return true;
             }
             if (this.anyCapturesInsidePropositions(child)) {
@@ -347,7 +362,7 @@ export default class Compiler {
         return false;
     }
 
-    validateProgram(pgm:Program):bool {
+    validateProgram(pgm: Program): boolean {
         // todo: validate programs against more basic sanity checks.
         //ensure each instruction's index is its index in pgm
         //ensure no split or jump goes beyond end of program
@@ -371,7 +386,7 @@ export default class Compiler {
         return true;
     }
 
-    reachableInstructions(pgm, i0, seen) {
+    reachableInstructions(pgm: Program, i0: number, seen: { [point: number]: boolean }): { [point: number]: boolean } {
         //a loop, or else out of program code
         if ((i0 in seen) || i0 >= pgm.length) {
             return seen;
@@ -382,9 +397,9 @@ export default class Compiler {
         //follow indirection via recursive search, keeping track of seen locations
         if (other.type == "split") {
             let seenLeft = this.reachableInstructions(pgm, other.left, seen);
-            return this.reachableInstructions(pgm, other.right, seenLeft);
+            return this.reachableInstructions(pgm, other.right!, seenLeft);
         } else if (other.type == "jump") {
-            return this.reachableInstructions(pgm, other.target, seen);
+            return this.reachableInstructions(pgm, other.target!, seen);
         } else {
             //for non-indirect instructions, just increment i0 and move on
             return this.reachableInstructions(pgm, i0 + 1, seen);
@@ -392,7 +407,7 @@ export default class Compiler {
     }
 }
 
-export function stringifyCustom(formula:ParseTree):string {
+export function stringifyCustom(formula: ParseTree): string {
     const value = formula.value === undefined ? "" : formula.value.toString();
     const children = formula.children && formula.children.length ?
         (formula.children.map((c) => stringifyFormula(c))).join(",") :
@@ -400,7 +415,7 @@ export function stringifyCustom(formula:ParseTree):string {
     return `${formula.type}(${value},${children})`;
 }
 
-export function stringifyFormula(formula:ParseTree):string {
+export function stringifyFormula(formula: ParseTree): string {
     switch (formula.type) {
         case parseTypes.TRUE:
             return "true";
@@ -419,13 +434,13 @@ export function stringifyFormula(formula:ParseTree):string {
         case parseTypes.GROUP:
             return `(${stringifyFormula(formula.children[0])})`;
         case parseTypes.CAPTURE:
-            return `$${formula.captureID}:${formula.group}(${stringifyFormula(formula.children[0])})`;
+            return `$${formula.value.captureID}:${formula.value.group}(${stringifyFormula(formula.children[0])})`;
         default:
             return stringifyCustom(formula);
     }
 }
 
-export function stringify(code:Program):string {
+export function stringify(code: Program): string {
     let result = [];
     for (let i = 0; i < code.length; i++) {
         const instr = code[i];
@@ -450,13 +465,14 @@ export function stringify(code:Program):string {
                 throw new Error("Unrecognized instruction " + instr);
         }
         if (instr.source) {
-            if (instr.source == "root") {
+            var src = instr.source!;
+            if (src == "root") {
                 instrStr += "  \t\t(root)";
             } else {
-                if (instr.type == "check" && "range" in instr.source) {
-                    instrStr += `\t(ch. ${instr.source.range.start}-${instr.source.range.end})`;
+                if (instr.type == "check" && "range" in src) {
+                    instrStr += `\t(ch. ${src.range.start}-${src.range.end})`;
                 } else {
-                    instrStr += `\t\t(${instr.source.type} ${JSON.stringify(instr.source.value)})`;
+                    instrStr += `\t\t(${src.type} ${JSON.stringify(src.value)})`;
                 }
             }
         }
@@ -464,5 +480,3 @@ export function stringify(code:Program):string {
     }
     return result.join("\n");
 }
-
-Compiler.stringify = stringify;

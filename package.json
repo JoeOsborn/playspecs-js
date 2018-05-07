@@ -1,0 +1,27 @@
+{
+    "name": "Playspecs",
+    "description": "Regular expressions generalized to sequences of events.",
+    "version": "1.0.0",
+    "homepage": "https://github.com/JoeOsborn/playspecs-js",
+    "license": "MIT",
+    "author": {
+        "name": "Joseph C. Osborn",
+        "email": "jcosborn@ucsc.edu"
+    },
+    "contributors": {
+        "name": "Benjamin Samuel",
+        "email": "benjamin.m.samuel@gmail.com"
+    },
+    "files": [
+        "doc/"
+    ],
+    "private": true,
+    "repository": "https://github.com/JoeOsborn/playspecs-js",
+    "devDependencies": {
+        "ts-loader": "^4.2.0",
+        "typescript": "^2.8.3",
+        "webpack": "^4.6.0",
+        "webpack-cli": "^2.1.2"
+    },
+    "scripts": {}
+}

@@ -2,7 +2,7 @@
 <head>
     <link rel="stylesheet" href="resources/css/explain.css"/>
     <script src="resources/js/explain.js"></script>
-    <script src="../playspecs.js"></script>
+    <script src="../dist/bundle.js"></script>
 </head>
 <body>
 <h1>Playspecs Parser</h1>
@@ -19,7 +19,7 @@
     recursive descent stage. The Playspecs parser recognizes both the temporal and propositional fragments of the
     game-independent Playspecs syntax, and can tokenize certain simple specs on its own (this core syntax is defined in
     <a href="resources/paper.pdf">the AIIDE paper</a>). Whitespace is ignored except as it separates other tokens.</p>
-<script>
+<script type="module">
     var expectedTokens = {
         "string": "start, ..., end",
         "tokens": [
@@ -79,7 +79,7 @@
     desc("<p>Parsers are initialized with a context object, explained in the next paragraph. Tokenize returns a " +
             "kind of token stream with a list of tokens and a position index into that list, along with the original " +
             "string in case the eventual parse doesn't use up the whole string.</p>", function () {
-        var parser = new Playspecs.Parser.Parser({});
+        var parser = new Playspecs.Parser([]);
         var tokens = parser.tokenize("start, ..., end");
         /*The result should look like this:
          var expectedTokens = {
@@ -87,7 +87,7 @@
          tokens: [
          {
          // `type` is the kind of Token this is. It is duplicated from the definition for convenience.
-         type: Playspecs.Parser.tokenTypes.START,
+         type: Playspecs.tokenTypes.START,
          // `value` is its value; for symbols like `start` it's just the string itself.
          // For e.g. numbers, the value might be the Number represented by the string.
          value: "start",
@@ -161,7 +161,7 @@
     };
     desc("<p>In case of an error, the unrecognized tokens are handled as well as possible and returned in the stream " +
             "object's <code>errors</code> field.</p>", function () {
-        var parser = new Playspecs.Parser.Parser({});
+        var parser = new Playspecs.Parser([]);
         var tokens = parser.tokenize("start bad , -> end");
         ex(tokens, expectedTokens);
     });
@@ -380,8 +380,8 @@
             "are mostly directional (though there are some bidirectional relationships), so we use a sort of labeled " +
             "edge syntax with an implied left-to-right orientation. Our token types are people, relationships, " +
             "networks, inequalities, and numbers. Let's tokenize a fragment of the Prom Week syntax:</p>", function () {
-        var parser = new Playspecs.Parser.Parser({
-            tokens: [
+        var parser = new Playspecs.Parser(
+            [
                 {
                     type: "PERSON",
                     match: ["Chloe", "Simon", "Phoebe", "Doug"/*, ... */]
@@ -398,7 +398,7 @@
                 }
                 // Also: networks, inequalities, numbers
             ]
-        });
+        );
         var tokens = parser.tokenize("start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end");
         ex(tokens, expectedTokens);
     });
@@ -570,7 +570,7 @@
         "remainder": ""
     };
     desc("<p>The core Playspecs language can already exhibit relatively complex parse trees.</p>", function () {
-        var parser = new Playspecs.Parser.Parser({});
+        var parser = new Playspecs.Parser([]);
         var parseResult = parser.parse("3...5, (false ..2 ; true, false, true) ...");
         ex(parseResult, expectedParseResult);
     });
@@ -730,17 +730,17 @@
             "operator, so we must parse it by hand with several recursive calls to <code>Parser/parseExpression</code>." +
             "Note that <code>LINK</code> cannot appear at the beginning of a parse, so it only provides " +
             "<code>extendParse</code>.</p>", function () {
-        var parser = new Playspecs.Parser.Parser({
-            tokens: [
+        var parser = new Playspecs.Parser(
+            [
                 {
                     type: "PERSON",
                     match: ["Chloe", "Simon", "Phoebe", "Doug"/*, ... */],
-                    startParse: Playspecs.Parser.parseValue
+                    startParse: Playspecs.parseValue
                 },
                 {
                     type: "RELATIONSHIP",
                     match: ["dating", "friends", "enemies", "embarrassed"/*, ... */],
-                    startParse: Playspecs.Parser.parseValue
+                    startParse: Playspecs.parseValue
                 },
                 {
                     type: "LINK",
@@ -780,21 +780,20 @@
                 }
                 // Also: networks, inequalities, numbers
             ]
-        });
+        );
         var parseResult = parser.parse("start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end");
         ex(parseResult, expectedParseResult);
     });
-    var promWeekContext = {
-        tokens: [
+    var promWeekTokens = [
             {
                 type: "PERSON",
                 match: ["Chloe", "Simon", "Phoebe", "Doug"/*, ... */],
-                startParse: Playspecs.Parser.parseValue
+                startParse: Playspecs.parseValue
             },
             {
                 type: "RELATIONSHIP",
                 match: ["dating", "friends", "enemies", "embarrassed"/*, ... */],
-                startParse: Playspecs.Parser.parseValue
+                startParse: Playspecs.parseValue
             },
             {
                 type: "LINK",
@@ -833,8 +832,7 @@
                 }
             }
             // Also: networks, inequalities, numbers
-        ]
-    };
+    ];
     expectedParseResult = {
         "tree": {
             "type": "ERROR",
@@ -955,7 +953,7 @@
     desc("<p>Parse errors are placed directly into the tree and also appear in a separate list. In this case, the " +
             "<code>LINK_RELATIONSHIP</code> tree can't be extended by another <code>LINK</code>. The parse " +
             "terminates right away, leaving the remainder of the string alone.</p>", function () {
-        var parser = new Playspecs.Parser.Parser(promWeekContext);
+        var parser = new Playspecs.Parser(promWeekTokens);
         var parseResult = parser.parse("Chloe-dating-Doug-embarrassed-Simon");
         ex(parseResult, expectedParseResult);
     });

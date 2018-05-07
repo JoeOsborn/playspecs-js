@@ -1,23 +1,30 @@
-/* @flow */
-
-import {parseTypes, Parser} from "./parser.js";
-import Compiler from "./compiler.js";
-
-export default class Playspec {
-    constructor(spec:string, context, debug:boolean = false) {
-        this.checkAPI = context.checks;
-        this.traceAPI = context.trace;
+import { PlayspecsContext } from "./types";
+import { parseTypes, Parser, ParseResult } from "./parser";
+import { ParseTree } from "./types";
+import { Compiler, Program } from "./compiler";
+export class Playspec<Trace, State> {
+    context: PlayspecsContext<Trace, State>;
+    spec: string;
+    parseResult: ParseResult;
+    program: Program;
+    constructor(spec: string, context: PlayspecsContext<Trace, State>, debug: boolean = false) {
+        this.context = context;
         this.spec = spec;
-        const parser = new Parser(context);
-        const compiler = new Compiler(context);
+        const parser = new Parser(context.tokens);
+        const compiler = new Compiler(context.tokens);
         this.parseResult = parser.parse(spec);
-        if(this.parseResult.errors.length) {
-            throw new Error("Parsed with errors:"+JSON.stringify(this.parseResult.errors));
+        if (this.parseResult.errors.length) {
+            throw new Error("Parsed with errors:" + JSON.stringify(this.parseResult.errors));
         }
         this.program = compiler.compile(this.parseResult.tree, debug);
     }
-
-    check(trace:Trace<State>, state:State, idx:number, formula:ParseTree):Boolean {
+    get traceAPI() {
+        return this.context.trace;
+    }
+    get checkAPI() {
+        return this.context.checks;
+    }
+    check(trace: Trace, state: State, idx: number, formula: ParseTree): Boolean {
         switch (formula.type) {
             case parseTypes.TRUE:
                 return true;
@@ -46,16 +53,48 @@ export default class Playspec {
         }
     }
 
-    match(trace:Trace<State>, preserveStates:boolean = false):PlayspecResult {
+    match(trace: Trace, preserveStates: boolean = false): PlayspecResult<Trace, State> | null {
         return (new PlayspecResult({
             spec: this,
             preserveStates
-        }, {trace: trace}, undefined)).next();
+        }, playspecResultStateInit(trace), undefined)).next();
     }
 }
 
+function playspecResultStateInit<T>(trace: T): PlayspecResultState<T> {
+    return {
+        // We can use plain arrays for the priority queue for now, since we know threads will be added
+        // in priority order. This also means we never shift, but increment i going up through the queue.
+        queue: new NonShrinkingArray<Thread>(),
+        nextQueue: new NonShrinkingArray<Thread>(),
+        threads: [],
+        // This NonReplacingHashMap will have number keys so it can use default hash/equiv
+        liveSet: new NonReplacingHashMap<number, ThreadState>(
+            ((a, b) => a == b),
+            ((a) => a)
+        ),
+        maxThreadID: 0,
+        // We start at -1 since the initial actions of the initial thread
+        // should happen before the trace reaches index 0. This mainly ensures that
+        // capture groups line up correctly.
+        index: -1,
+        pastEnd: false,
+        trace: trace,
+        // Same here for matches, always added in priority order -- but can use a regular array
+        matchQueue: new PriorityQueue(
+            (m: Match) => m.priority
+        ),
+        matchSet: new NonReplacingHashMap(matchEquivFn, matchHashFn),
+        lastMatchPriority: 0
+    };
+}
+
 class Thread {
-    constructor(id:number, pc:number, priority:number, matches:Array<Match>) {
+    id: number;
+    pc: number;
+    priority: number;
+    matches: Match[];
+    constructor(id: number, pc: number, priority: number, matches: Array<Match>) {
         this.id = id;
         this.pc = pc;
         this.priority = priority;
@@ -67,15 +106,15 @@ class Thread {
         });
     }
 
-    equals(t2:Thread):boolean {
+    equals(t2: Thread): boolean {
         return this.pc == t2.pc;
     }
 
-    hash():number {
+    hash(): number {
         return this.pc;
     }
 
-    mergeThread(other:Thread) {
+    mergeThread(other: Thread) {
         // Match sharing: if matches are shared, replace matches list with slice of matches list,
         // and insert either clones of other's matches (if other is sharing matches) or other's matches directly
         // Also update priority of new matches
@@ -96,7 +135,7 @@ class Thread {
         // Merge any other state
     }
 
-    hasOpenMatch():boolean {
+    hasOpenMatch(): boolean {
         for (let i = 0; i < this.matches.length; i++) {
             if (this.matches[i].instructions.length > 0) {
                 return true;
@@ -105,7 +144,7 @@ class Thread {
         return false;
     }
 
-    pushMatchInstruction(instr:MatchInstruction) {
+    pushMatchInstruction(instr: MatchInstruction) {
         // Match sharing: if matches are shared, replace matches list with a new list containing clones of matches
         // Also update priority of matches
         // And set sharedMatches to false
@@ -116,19 +155,35 @@ class Thread {
 
     terminate() {
         // Let matches, and thus kept states, be garbage collected
-        this.matches = null;
+        this.matches = [];
     }
 }
 
-class NonReplacingHashMap {
-    constructor(equivFn:Function, hashFn:Function, bucketCount:number = 1000) {
+class Item<K, V> {
+    key: K;
+    val: V;
+    constructor(k: K, v: V) {
+        this.key = k;
+        this.val = v;
+    }
+}
+
+class NonReplacingHashMap<K, V> {
+    equiv: (a: K, b: K) => boolean;
+    hash: (a: K) => number;
+    coll: Item<K, V>[][];
+    length: number;
+    constructor(
+        equivFn: (a: K, b: K) => boolean,
+        hashFn: (a: K) => number,
+        bucketCount: number = 1000) {
         this.equiv = equivFn;
         this.hash = hashFn;
         this.coll = new Array(bucketCount);
         this.length = 0;
     }
 
-    bucketFind(bucket, obj) {
+    bucketFind(bucket: Item<K, V>[], obj: K) {
         for (let i = 0; i < bucket.length; i++) {
             if (this.equiv ? this.equiv(bucket[i].key, obj) : bucket[i].key == obj) {
                 return bucket[i].val;
@@ -139,30 +194,27 @@ class NonReplacingHashMap {
 
     // If val is not provided, it defaults to true
     // Unlike a regular map, this will NOT replace existing keys!
-    push(obj, val = undefined) {
-        if (!val) {
-            val = true;
-        }
-        const hashCode = this.hash ? (this.hash(obj) % this.coll.length) : obj;
+    push(obj: K, val: V) {
+        const hashCode = this.hash(obj) % this.coll.length;
         let bucket = this.coll[hashCode];
         if (!bucket) {
-            this.coll[hashCode] = [{key: obj, val: val}];
+            this.coll[hashCode] = [{ key: obj, val: val }];
         } else {
             if (this.bucketFind(bucket, obj) !== undefined) {
                 return false;
             } else {
-                bucket.push({key: obj, val: val});
+                bucket.push({ key: obj, val: val });
             }
         }
         this.length++;
         return true;
     }
 
-    get(obj) {
+    get(obj: K): V | undefined {
         if (this.length == 0) {
             return undefined;
         }
-        const hashCode = this.hash ? (this.hash(obj) % this.coll.length) : obj;
+        const hashCode = this.hash(obj) % this.coll.length;
         let bucket = this.coll[hashCode];
         if (!bucket) {
             return undefined;
@@ -170,19 +222,19 @@ class NonReplacingHashMap {
         return this.bucketFind(bucket, obj);
     }
 
-    clear() {
+    clear(): void {
         for (let i = 0; i < this.coll.length; i++) {
             //todo: generate less garbage?
-            this.coll[i] = null;
+            this.coll[i] = [];
         }
         this.length = 0;
     }
 
-    contains(obj) {
+    contains(obj: K): boolean {
         if (this.length == 0) {
             return false;
         }
-        const hashCode = this.hash ? (this.hash(obj) % this.coll.length) : obj;
+        const hashCode = this.hash(obj) % this.coll.length;
         let bucket = this.coll[hashCode];
         if (!bucket) {
             return false;
@@ -191,7 +243,7 @@ class NonReplacingHashMap {
     }
 }
 
-function hashInt(h, int32) {
+function hashInt(h: number, int32: number): number {
     h += (int32) | 0;
     h += (h << 10) | 0;
     h ^= (h >> 6) | 0;
@@ -206,73 +258,80 @@ function hashInt(h, int32) {
     h ^= (h >> 6) | 0;
     return h;
 }
-function finalizeHash(h:number):number {
+function finalizeHash(h: number): number {
     h += (h << 3) | 0;
     h ^= (h >> 11) | 0;
     h += (h << 15) | 0;
     return h;
 }
-function hashNumbers(...numbers:Array<Number>):number {
+function hashNumbers(...numbers: number[]): number {
     let h = 0;
     for (let i = 0; i < numbers.length; i++) {
         h = hashInt(h, numbers[i]);
     }
     return finalizeHash(h);
 }
+type MatchStartEnd = {
+    type: "start" | "end",
+    group: string | number,
+    groupIndex: number,
+    index: number
+};
+type MatchRegisterState = { type: "state", index: number, state: any };
+type MatchInstruction = MatchStartEnd | MatchRegisterState;
+type Match = { priority: number, instructions: Array<MatchInstruction> };
 
-type
-MatchInstruction = {type: "start" | "end", group: string | number, groupIndex: number, index: number} |
-    {type: "state", index: number, state: any};
-type
-Match = {priority: number, instructions: Array < MatchInstruction >};
-
-const matchEquivFn = function (a:Match, b:Match) {
+const matchEquivFn = function (a: Match, b: Match) {
     if (a.instructions.length != b.instructions.length) {
         return false;
     }
     for (let i = 0; i < a.instructions.length; i++) {
-        if (a.instructions[i].type != b.instructions[i].type ||
-          a.instructions[i].index != b.instructions[i].index ||
-          a.instructions[i].group != b.instructions[i].group) {
+        const insA = a.instructions[i];
+        const insB = b.instructions[i];
+        if (insA.type != insB.type ||
+            insA.index != insB.index ||
+            ((insA as MatchStartEnd).group != (insB as MatchStartEnd).group)) {
             return false;
         }
     }
     return true;
 }
-const matchHashFn = function (a:Match) {
+const matchHashFn = function (a: Match) {
     return hashNumbers(a.instructions.length);
 }
 
-function cloneMatch(m:Match):Match {
+function cloneMatch(m: Match): Match {
     return {
         priority: m.priority,
         instructions: m.instructions.slice()
     };
 }
 
-class NonShrinkingArray {
+class NonShrinkingArray<T> {
+    array: T[];
+    length: number;
     constructor() {
         this.array = [];
         this.length = 0;
     }
 
-    push(obj) {
+    push(obj: T): void {
         this.array[this.length] = obj;
         this.length++;
     }
 
-    clear() {
+    clear(): void {
         this.length = 0;
     }
 
-    get first():any {
+    get first(): T | undefined {
         if (this.length == 0) {
             return undefined;
         }
         return this.array[0];
     }
 
-    get(i:number):any {
+    get(i: number): T | undefined {
         if (i < 0 || i >= this.length) {
             return undefined;
         }
@@ -281,12 +340,23 @@ class NonShrinkingArray {
 }
 
 // We know a priori that the number of priority levels is relatively small
-class PriorityQueue {
-    constructor(pfn:Function, equivFn:Function, hashFn:Function) {
+class PriorityQueue<T> {
+    queues: T[][];
+    members: NonReplacingHashMap<T, boolean> | undefined;
+    priorityFunction: (t: T) => number;
+    length: number;
+    lowestPriority: number;
+    highestPriority: number;
+    constructor(
+        pfn: (t: T) => number,
+        equivFn?: (t1: T, t2: T) => boolean,
+        hashFn?: (t: T) => number) {
         this.queues = [];
         this.priorityFunction = pfn;
         this.length = 0;
-        if (equivFn || hashFn) {
+        this.lowestPriority = Infinity;
+        this.highestPriority = -Infinity;
+        if (equivFn && hashFn) {
             this.members = new NonReplacingHashMap(equivFn, hashFn);
         } else {
             this.members = undefined;
@@ -295,13 +365,13 @@ class PriorityQueue {
     }
 
     // We also know a priori that duplicates will be detected externally if there is no equivFn/hashFn
-    push(obj) {
+    push(obj: T): boolean {
         const idx = this.priorityFunction(obj);
         if (this.members) {
             if (this.members.contains(obj)) {
                 return false;
             }
-            this.members.push(obj);
+            this.members.push(obj, true);
         }
         if (!(idx in this.queues)) {
             this.queues[idx] = [obj];
@@ -318,9 +388,9 @@ class PriorityQueue {
         return true;
     }
 
-    shift():any {
+    shift(): T | undefined {
         if (this.lowestPriority >= Infinity || this.length == 0) {
-            return null;
+            return undefined;
         }
         const q = this.queues[this.lowestPriority];
         // Within a priority level, we want the _reverse_ order of addition
@@ -340,14 +410,14 @@ class PriorityQueue {
         return result;
     }
 
-    get first():any {
+    get first(): T | undefined {
         if (this.length == 0) {
             return undefined;
         }
         return this.queues[this.lowestPriority][0];
     }
 
-    clear() {
+    clear(): void {
         //todo: generate less garbage
         this.queues = [];
         this.lowestPriority = Infinity;
@@ -361,33 +431,53 @@ class PriorityQueue {
 
 const LIVESET_CLEAR_INTERVAL = 100;
 
-class PlayspecResult {
-    constructor(config:{spec:Playspec, preserveStates:boolean},
-                state:{trace:Trace<State>, threads:Array<Thread>, maxThreadID:number},
-                match:PlayspecMatchResult) {
+type ThreadState = {
+    index: number,
+    threads: NonShrinkingArray<Thread>
+};
+
+type PlayspecResultState<Trace> = {
+    trace: Trace,
+    threads: Thread[],
+    maxThreadID: number,
+    queue: NonShrinkingArray<Thread>,
+    nextQueue: NonShrinkingArray<Thread>,
+    liveSet: NonReplacingHashMap<number, ThreadState>,
+    index: number,
+    pastEnd: boolean,
+    matchQueue: PriorityQueue<Match>,
+    matchSet: NonReplacingHashMap<Match, boolean>,
+    lastMatchPriority: number
+};
+
+type GroupData<State> = {
+    group: string | number,
+    groupIndex: number,
+    start: number,
+    end: number,
+    states: State[] | undefined
+};
+
+type PlayspecMatchResult<State> = {
+    start: number,
+    end: number,
+    states?: State[],
+    subgroups: GroupData<State>[]
+};
+
+class PlayspecResult<Trace, State> {
+    config: { spec: Playspec<Trace, State>, preserveStates: boolean };
+    state: PlayspecResultState<Trace> | undefined;
+    match: PlayspecMatchResult<State> | undefined;
+    constructor(
+        config: { spec: Playspec<Trace, State>, preserveStates: boolean },
+        state: PlayspecResultState<Trace>,
+        match: PlayspecMatchResult<State> | undefined) {
         this.config = config;
         this.state = state;
-        if (!this.state || !this.state.queue) {
-            this.state = {
-                // We can use plain arrays for the priority queue for now, since we know threads will be added
-                // in priority order. This also means we never shift, but increment i going up through the queue.
-                queue: new NonShrinkingArray(),
-                nextQueue: new NonShrinkingArray(),
-                // This NonReplacingHashMap will have number keys so it can use default hash/equiv
-                liveSet: new NonReplacingHashMap(null, null),
-                maxThreadID: 0,
-                // We start at -1 since the initial actions of the initial thread
-                // should happen before the trace reaches index 0. This mainly ensures that
-                // capture groups line up correctly.
-                index: -1,
-                pastEnd: false,
-                trace: this.config.spec.traceAPI.start(state.trace),
-                // Same here for matches, always added in priority order -- but can use a regular array
-                matchQueue: new PriorityQueue((m:Match) => m.priority),
-                matchSet: new NonReplacingHashMap(matchEquivFn, matchHashFn),
-                lastMatchPriority: 0
-            };
-            let initThread = new Thread(0, 0, 0, [{priority: 0, instructions: []}]);
+        if (this.state.index == -1) {
+            this.state.trace = this.config.spec.traceAPI.start(this.state.trace);
+            let initThread = new Thread(0, 0, 0, [{ priority: 0, instructions: [] }]);
             this.enqueueThread(initThread);
             //swap queues
             const temp = this.state.queue;
@@ -418,32 +508,32 @@ class PlayspecResult {
         return this.match ? this.match.subgroups : undefined;
     }
 
-    hasReadyMatch():boolean {
-        if (!this.state.matchQueue.length) {
+    hasReadyMatch(): boolean {
+        if (!this.state!.matchQueue.length) {
             return false;
         }
-        if (!this.state.queue.length) {
+        if (!this.state!.queue.length) {
             return true;
         }
-        return this.state.matchQueue.first.priority <= this.state.queue.first.priority
+        return this.state!.matchQueue.first!.priority <= this.state!.queue.first!.priority
     }
 
-    enqueueThread(thread) {
+    enqueueThread(thread: Thread) {
         // Unlike Cox's implementation, we can only do duplicate checking for threads that are about to park.
         // So we'll do some redundant jumping/splitting/matching, but since we need to merge threads it can't
         // really be avoided.
         const instr = this.config.spec.program[thread.pc];
         switch (instr.type) {
             case "jump":
-                thread.pc = instr.target;
+                thread.pc = instr.target!;
                 this.enqueueThread(thread);
                 return;
             case "split":
-                this.state.maxThreadID++;
+                this.state!.maxThreadID!++;
                 thread.pc = instr.left;
                 //match sharing: Be sure thread1 knows thread2 is using its matches.
                 //thread.sharedMatches = true;
-                const thread2 = new Thread(this.state.maxThreadID, instr.right, thread.priority + 1, thread.matches);
+                const thread2 = new Thread(this.state!.maxThreadID, instr.right!, thread.priority + 1, thread.matches);
                 this.enqueueThread(thread);
                 this.enqueueThread(thread2);
                 return;
@@ -452,7 +542,7 @@ class PlayspecResult {
                     type: "start",
                     // +1 because the _current_ trace index just matched previously, so we don't want to include it in
                     // the match that starts with the _next_ character.
-                    index: this.state.index + 1,
+                    index: this.state!.index + 1,
                     group: instr.group,
                     groupIndex: instr.captureID
                 });
@@ -463,7 +553,7 @@ class PlayspecResult {
                 thread.pushMatchInstruction({
                     type: "end",
                     // +1 for same reason as above.
-                    index: this.state.index + 1,
+                    index: this.state!.index + 1,
                     group: instr.group,
                     groupIndex: instr.captureID
                 });
@@ -475,9 +565,9 @@ class PlayspecResult {
                 for (let i = 0; i < thread.matches.length; i++) {
                     if (thread.matches[i].priority >= thread.priority) {
                         // If it's a novel match...
-                        if (this.state.matchSet.push(thread.matches[i])) {
+                        if (this.state!.matchSet.push(thread.matches[i], true)) {
                             // Add it to the queue!
-                            this.state.matchQueue.push(thread.matches[i]);
+                            this.state!.matchQueue.push(thread.matches[i]);
                         }
                     }
                 }
@@ -487,20 +577,24 @@ class PlayspecResult {
             case "check":
                 // check live set, then add to queue
                 const hash = thread.hash();
-                let live = this.state.liveSet.get(hash);
+                let state = this.state!;
+                let live: ThreadState | undefined = state.liveSet.get(hash);
                 if (!live) {
-                    let threadList = new NonShrinkingArray();
+                    let threadList = new NonShrinkingArray<Thread>();
                     threadList.push(thread);
-                    this.state.liveSet.push(hash, {index: this.state.index, threads: threadList});
-                } else if (live.index != this.state.index) {
-                    live.index = this.state.index;
+                    state.liveSet.push(hash, {
+                        index: state.index,
+                        threads: threadList
+                    });
+                } else if (live.index != state!.index) {
+                    live.index = state.index;
                     live.threads.clear();
                     live.threads.push(thread);
                 } else {
                     //maybe present
                     for (let i = 0; i < live.threads.length; i++) {
-                        if (live.threads.get(i).equals(thread)) {
-                            live.threads.get(i).mergeThread(thread);
+                        if (live.threads.get(i)!.equals(thread)) {
+                            live.threads.get(i)!.mergeThread(thread);
                             // Drop the merged-in thread, no more work to do
                             thread.terminate();
                             return;
@@ -508,7 +602,7 @@ class PlayspecResult {
                     }
                 }
                 //not present: add stuck thread to queue.
-                this.state.nextQueue.push(thread);
+                state.nextQueue.push(thread);
                 return;
             //todo: case fork, join, joined-left, joined-right
             // joined-left and joined-right will need to handle merging!
@@ -517,18 +611,22 @@ class PlayspecResult {
         }
     }
 
-    prettifyMatch(m:Match) {
+    prettifyMatch(m: Match): PlayspecMatchResult<State> {
         let groups = [];
-        let liveGroups = {};
+        let liveGroups: {
+            [key: string]: GroupData<State>,
+            [index: number]: GroupData<State>
+        } = {};
         for (let i = 0; i < m.instructions.length; i++) {
             const instr = m.instructions[i];
             switch (instr.type) {
                 case "start":
-                    let newG = {
+                    let newG: GroupData<State> = {
                         group: instr.group,
                         groupIndex: instr.groupIndex,
                         start: instr.index,
-                        end: Infinity
+                        end: Infinity,
+                        states: undefined
                     };
                     if (this.config.preserveStates) {
                         newG.states = [];
@@ -539,11 +637,13 @@ class PlayspecResult {
                     }
                     liveGroups[newG.group] = newG;
                     break;
+                //TODO: handle atomic formula captures as a new case? or as state?
                 case "state":
                     let openGroups = Object.getOwnPropertyNames(liveGroups);
                     for (let gi = 0; gi < openGroups.length; gi++) {
                         let continuedG = liveGroups[openGroups[gi]];
-                        continuedG.states.push(instr.state);
+                        //We'll only get here if we're preserving states; unless we reuse "state" for atomic element captures
+                        continuedG.states!.push(instr.state);
                     }
                     break;
                 case "end":
@@ -557,22 +657,23 @@ class PlayspecResult {
         if (openGroups.length) {
             throw new Error(`Open capture groups: ${openGroups.join(",")}`);
         }
-        let rootGroup = groups.shift();
-        let rootMatch = {
-            start:rootGroup.start,
-            end:rootGroup.end,
+        let rootGroup = groups.shift()!;
+        let rootMatch: PlayspecMatchResult<State> = {
+            start: rootGroup.start,
+            end: rootGroup.end,
             //TODO: Ought empty captures to be dropped?
-            subgroups:groups.filter(
+            subgroups: groups.filter(
                 (group) => group.start != group.end
-            )
+            ),
+            states: undefined
         };
-        if(this.config.preserveStates) {
-            rootMatch.states = rootGroup.states;
+        if (this.config.preserveStates) {
+            rootMatch.states = rootGroup.states!;
         }
         return rootMatch;
     }
 
-    next():PlayspecResult {
+    next(): PlayspecResult<Trace, State> | null {
         if (!this.state) {
             throw new Error("Don't call next() on the same PlayspecResult twice!");
         }
@@ -585,10 +686,10 @@ class PlayspecResult {
                 if (t >= limit) {
                     throw new Error("The thread queue should never grow during a single trace state!");
                 }
-                if (t.priority < lastPriority) {
+                let thread = this.state.queue.get(t)!;
+                if (thread.priority < lastPriority) {
                     throw new Error("Decreasing priority!");
                 }
-                let thread = this.state.queue.get(t);
                 const instr = this.config.spec.program[thread.pc];
                 switch (instr.type) {
                     case "check":
@@ -604,7 +705,7 @@ class PlayspecResult {
                                 if (this.config.preserveStates) {
                                     if (!copiedState) {
                                         copiedState = this.config.spec.traceAPI.copyCurrentState ?
-                                            this.config.spec.traceAPI.copyCurrentState() :
+                                            this.config.spec.traceAPI.copyCurrentState(this.state.trace) :
                                             state;
                                     }
                                     thread.pushMatchInstruction({
@@ -613,6 +714,7 @@ class PlayspecResult {
                                         state: copiedState
                                     });
                                 }
+                                //TODO: atomic captures go here
                             }
                             this.enqueueThread(thread);
                         } else { //otherwise drop the thread on the floor
@@ -637,7 +739,10 @@ class PlayspecResult {
             //advance, unless already at end
             if (this.config.spec.traceAPI.isAtEnd(this.state.trace)) {
                 //wipe out queue, no more trace to match!
-                this.state.queue.clear();
+                if (!this.config.spec.traceAPI.isStreaming ||
+                    !this.config.spec.traceAPI.isStreaming(this.state.trace)) {
+                    this.state.queue.clear();
+                }
                 break;
             }
             this.config.spec.traceAPI.advanceState(this.state.trace);
@@ -645,7 +750,7 @@ class PlayspecResult {
         }
         if (this.hasReadyMatch()) {
             // Also removes first match from queue!
-            const match = this.state.matchQueue.shift();
+            const match = this.state.matchQueue.shift()!;
             if (this.state.lastMatchPriority > match.priority) {
                 throw new Error("Matches popped out of order!");
             }
@@ -658,7 +763,18 @@ class PlayspecResult {
                 nextState,
                 prettyMatch
             );
-        } // Otherwise, we're out of queue or trace and have nowhere to go
+        }
+        if (this.config.spec.traceAPI.isStreaming &&
+            this.config.spec.traceAPI.isStreaming(this.state.trace)) {
+            const nextState = this.state;
+            this.state = undefined;
+            return new PlayspecResult(
+                this.config,
+                nextState,
+                undefined
+            )
+        }
+        // Otherwise, we're out of queue or trace and have nowhere to go
         this.state = undefined;
         return null;
     }

@@ -1,6 +1,6 @@
-/* @flow */
+import { TokenDefinition, Token, ParseTree, MatchResult, IParser } from "./types";
 
-export const tokenTypes:{ [key: string]: string } = {
+export const tokenTypes: { [key: string]: string } = {
     WHITESPACE: " ",
     CONCATENATION: ",",
     // Bounding integers are tokenized as part of the dots to minimize potential conflicts with user-provided syntax.
@@ -22,7 +22,7 @@ export const tokenTypes:{ [key: string]: string } = {
     ERROR: "error"
 };
 
-export const parseTypes:{ [key: string]: string } = {
+export const parseTypes: { [key: string]: string } = {
     OMEGA: tokenTypes.DOTS_OMEGA,
     REPETITION: tokenTypes.DOTS_GREEDY,
     CONCATENATION: tokenTypes.CONCATENATION,
@@ -40,73 +40,43 @@ export const parseTypes:{ [key: string]: string } = {
     ERROR: tokenTypes.ERROR
 };
 
-type
-MatchResult = Array < string >;
 
-type
-TokenDefinition = Array < {
-        type: string,
-        match: string | Array < string > | RegExp,
-        value? : ((mr:MatchResult) => any),
-        tightness? : number,
-        startParse? : ((p:Parser, t:Token) => ParseTree),
-        extendParse? : ((p:Parser, pt:ParseTree, t:Token) => ParseTree)
-    } >;
-
-type
-Token = {
-    type: string,
-    value: any,
-    // A bit redundant, but makes defining generic startParse/extendParse functions easier.
-    tightness: number,
-    range: {start: number, end: number}
-};
-
-type
-ParseTree = {
-    type: string,
-    value: any,
-    children: Array < ParseTree >,
-    range: {start: number, end: number}
-};
-
-type
-TokenStream = {
+export type TokenStream = {
     string: string,
-    tokens: Array < Token >,
+    tokens: Array<Token>,
     position: number,
-    errors: Array < number >
+    errors: Array<number>
 };
 
-export function cloneTree(p:ParseTree):ParseTree {
+export function cloneTree(p: ParseTree): ParseTree {
     return {
-        type:p.type,
-        value:p.value,
-        children:p.children.slice(),
-        range:{
-            start:p.range.start,
-            end:p.range.end
+        type: p.type,
+        value: p.value,
+        children: p.children.slice(),
+        range: {
+            start: p.range.start,
+            end: p.range.end
         }
     };
 }
 
-export const constantValue = function (c:any) {
-    return function (_mr:MatchResult) {
+export const constantValue = function (c: any) {
+    return function (_mr: MatchResult) {
         return c;
     }
 };
 
-export const parseValue = function (parser:Parser, token:Token) {
+export const parseValue = function (parser: IParser, token: Token) {
     return parser.node(token.type, token.value);
 };
 
-export const parseInfixR = function (parser:Parser, left:ParseTree, token:Token) {
+export const parseInfixR = function (parser: IParser, left: ParseTree, token: Token) {
     let children = [left];
     children.push(parser.parseExpression(token.tightness - 1));
     return parser.node(token.type, token.value, children);
 };
 
-export const parseInfixRPropositional = function (parser:Parser, left:ParseTree, token:Token) {
+export const parseInfixRPropositional = function (parser: IParser, left: ParseTree, token: Token) {
     if (!isPropositional(left)) {
         return parser.error("Left hand side of token must be propositional", token, left);
     }
@@ -121,9 +91,9 @@ export const parseInfixRPropositional = function (parser:Parser, left:ParseTree,
 
 export const BOUND_INFINITE = "$END";
 
-export const standardTokens:Array<TokenSchema> = [
+export const standardTokens: Array<TokenDefinition> = [
     {
-        type: tokenTypes.WHITESPACE,
+        "type": tokenTypes.WHITESPACE,
         match: /^\s+/
     },
     {
@@ -135,7 +105,7 @@ export const standardTokens:Array<TokenSchema> = [
     {
         type: tokenTypes.DOTS_GREEDY,
         match: /^([0-9]*)\s*\.\.\.\s*([0-9]*)/,
-        value: function (matchResult:MatchResult):any {
+        value: function (matchResult: MatchResult): any {
             return {
                 greedy: true,
                 lowerBound: matchResult[1] ? parseInt(matchResult[1]) : 0,
@@ -143,13 +113,13 @@ export const standardTokens:Array<TokenSchema> = [
             };
         },
         tightness: 110,
-        startParse: function (parser:Parser, token:Token):ParseTree {
+        startParse: function (parser: IParser, token: Token): ParseTree {
             const truePhi = parser.node(parseTypes.TRUE, true);
             truePhi.range.start = token.range.start;
             truePhi.range.end = token.range.start;
             return parser.node(parseTypes.REPETITION, token.value, [truePhi]);
         },
-        extendParse: function (parser:Parser, left:ParseTree, token:Token):ParseTree {
+        extendParse: function (parser: IParser, left: ParseTree, token: Token): ParseTree {
             return parser.node(parseTypes.REPETITION, token.value, [left]);
         }
     },
@@ -157,20 +127,20 @@ export const standardTokens:Array<TokenSchema> = [
         type: tokenTypes.DOTS_RELUCTANT,
         match: /^([0-9]*)\s*\.\.\s*([0-9]*)/,
         tightness: 110,
-        value: function (matchResult:MatchResult) {
+        value: function (matchResult: MatchResult) {
             return {
                 greedy: false,
                 lowerBound: matchResult[1] ? parseInt(matchResult[1]) : 0,
                 upperBound: matchResult[2] ? parseInt(matchResult[2]) : BOUND_INFINITE
             };
         },
-        startParse: function (parser:Parser, token:Token):ParseTree {
+        startParse: function (parser: IParser, token: Token): ParseTree {
             const truePhi = parser.node(parseTypes.TRUE, true);
             truePhi.range.start = token.range.start;
             truePhi.range.end = token.range.start;
             return parser.node(parseTypes.REPETITION, token.value, [truePhi]);
         },
-        extendParse: function (parser:Parser, left:ParseTree, token:Token):ParseTree {
+        extendParse: function (parser: IParser, left: ParseTree, token: Token): ParseTree {
             return parser.node(parseTypes.REPETITION, token.value, [left]);
         }
     },
@@ -178,20 +148,20 @@ export const standardTokens:Array<TokenSchema> = [
         type: tokenTypes.DOTS_OMEGA,
         match: [tokenTypes.DOTS_OMEGA],
         tightness: 110,
-        startParse: function (parser:Parser, token:Token):ParseTree {
+        startParse: function (parser: IParser, token: Token): ParseTree {
             const truePhi = parser.node(parseTypes.TRUE, true);
             truePhi.range.start = token.range.start;
             truePhi.range.end = token.range.end;
             return parser.node(parseTypes.OMEGA, token.value, [truePhi]);
         },
-        extendParse: function (parser:Parser, left:ParseTree, token:Token):ParseTree {
+        extendParse: function (parser: IParser, left: ParseTree, token: Token): ParseTree {
             return parser.node(parseTypes.OMEGA, token.value, [left]);
         }
     },
     {
         type: tokenTypes.LEFT_PAREN,
         match: [tokenTypes.LEFT_PAREN],
-        startParse: function (parser:Parser, token:Token):ParseTree {
+        startParse: function (parser: IParser, token: Token): ParseTree {
             //parse an expression at RBP 0, then eat a )
             const expr = parser.parseExpression(0);
             if (parser.currentToken().type != tokenTypes.RIGHT_PAREN) {
@@ -208,12 +178,12 @@ export const standardTokens:Array<TokenSchema> = [
     {
         type: tokenTypes.CAPTURING_LEFT_PAREN,
         match: /^\$([A-z_][A-z_0-9]*)?\(/,
-        value: function (matchResult:MatchResult) {
+        value: function (matchResult: MatchResult) {
             return {
                 group: matchResult[1] || "$implicit"
             };
         },
-        startParse: function (parser:Parser, token:Token):ParseTree {
+        startParse: function (parser: IParser, token: Token): ParseTree {
             //parse an expression at RBP 0, then eat a )
             const expr = parser.parseExpression(0);
             if (parser.currentToken().type != tokenTypes.RIGHT_PAREN) {
@@ -251,7 +221,7 @@ export const standardTokens:Array<TokenSchema> = [
         type: tokenTypes.NOT,
         match: [tokenTypes.NOT],
         tightness: 220,
-        startParse: function (parser:Parser, token:Token):ParseTree {
+        startParse: function (parser: IParser, token: Token): ParseTree {
             const phi = parser.parseExpression(token.tightness);
             if (!isPropositional(phi)) {
                 return parser.error("NOT may only negate propositional state formulae", token, phi);
@@ -292,11 +262,7 @@ const customTightnessOffset = 300;
 
 const ERROR = "ERROR";
 
-function isString(s:any):bool {
-    return typeof s === 'string' || s instanceof String;
-}
-
-export function isCustom(p:ParseTree):bool {
+export function isCustom(p: ParseTree): boolean {
     for (var k in parseTypes) {
         if (parseTypes[k] == p.type) {
             return false;
@@ -305,7 +271,7 @@ export function isCustom(p:ParseTree):bool {
     return true;
 }
 
-export function isPropositional(p:ParseTree):bool {
+export function isPropositional(p: ParseTree): boolean {
     return isCustom(p) ||
         p.type == parseTypes.AND ||
         p.type == parseTypes.OR ||
@@ -314,33 +280,43 @@ export function isPropositional(p:ParseTree):bool {
         p.type == parseTypes.FALSE ||
         p.type == parseTypes.START ||
         p.type == parseTypes.END ||
-        ((p.type == parseTypes.GROUP||p.type == parseTypes.CAPTURE) &&
-        p.children.every(function (c) {
-            return isPropositional(c);
-        }));
+        ((p.type == parseTypes.GROUP || p.type == parseTypes.CAPTURE) &&
+            p.children.every(function (c) {
+                return isPropositional(c);
+            }));
 }
-
-export class Parser {
-    constructor(context) {
+export type ParseResult = {
+    tree: ParseTree,
+    errors: Array<ParseTree>,
+    remainder: string
+};
+export class Parser implements IParser {
+    public tokenDefinitions: Array<TokenDefinition>;
+    public tokensByType: { [key: string]: TokenDefinition };
+    public parseErrors: Array<ParseTree>;
+    public stream?: TokenStream;
+    constructor(contextTokens: Array<TokenDefinition>) {
         this.tokenDefinitions = [];
         this.tokensByType = {};
         this.parseErrors = [];
-        const customTokens = context.tokens || [];
+        const customTokens = contextTokens || [];
         const tokens = customTokens.concat(standardTokens);
         for (let ti = 0; ti < tokens.length; ti++) {
-            const input = tokens[ti];
-            const tightness = input.tightness || 0;
-            const defn = {
+            const input: TokenDefinition = tokens[ti];
+            const tightness: number = input.tightness || 0;
+            const defn: TokenDefinition = {
                 type: input.type,
-                match: isString(input.match) ? [input.match] : input.match,
+                match: input.match instanceof RegExp ? input.match :
+                    (typeof (input.match) == 'string') ? [input.match] :
+                        input.match,
                 value: input.value || function (mr) {
                     return mr[0];
                 },
                 tightness: ti < customTokens.length ? tightness + customTightnessOffset : tightness,
-                startParse: input.startParse || function (parser, token) {
+                startParse: input.startParse || function (parser: IParser, token: Token) {
                     return parser.error("Can't start a parse tree with this token", token);
                 },
-                extendParse: input.extendParse || function (parser, token, parseTree) {
+                extendParse: input.extendParse || function (parser: IParser, parseTree: ParseTree, token: Token) {
                     return parser.error("Can't extend a parse tree with this token", token, parseTree);
                 }
             };
@@ -350,40 +326,50 @@ export class Parser {
         this.resetStream();
     }
 
-    node(type:string, value:any = undefined, children:Array<ParseTree> = []):ParseTree {
-        return {type, value, children, range: {start: -1, end: -1}};
+    node(type: string, value: any = undefined, children: Array<ParseTree> = []): ParseTree {
+        return { type, value, children, range: { start: -1, end: -1 } };
     }
 
-    error(msg:string, token:Token, tree:ParseTree = undefined):ParseTree {
-        const err = this.node(ERROR, {message: msg, token, tree});
+    error(msg: string, token: Token, tree?: ParseTree): ParseTree {
+        const err = this.node(ERROR, { message: msg, token, tree });
         this.parseErrors.push(err);
         return err;
     }
 
-    tokenize(str:string):TokenStream {
-        let result:Array<Token> = [];
-        let errors:Array<number> = [];
-        let substring:string = str;
-        let index:number = 0;
+    tokenize(str: string): TokenStream {
+        let result: Array<Token> = [];
+        let errors: Array<number> = [];
+        let substring: string = str;
+        let index: number = 0;
         while (substring.length) {
             for (let ti = 0; ti < this.tokenDefinitions.length; ti++) {
-                const tokenDefinition = this.tokenDefinitions[ti];
+                const tokenDefinition: TokenDefinition = this.tokenDefinitions[ti];
                 const match = tokenDefinition.match;
-                let matchResult = null;
+                let matchResult: {
+                    match: Array<string> | RegExpExecArray | null,
+                    index: number
+                } = {
+                        match: null,
+                        index: -1
+                    };
                 if (match instanceof RegExp) {
-                    matchResult = match.exec(substring);
+                    let execResult = match.exec(substring);
+                    if (execResult) {
+                        matchResult.match = execResult;
+                        matchResult.index = execResult.index;
+                    }
                 } else if (Array.isArray(match)) {
                     for (let mi = 0; mi < match.length; mi++) {
                         const candidate = match[mi];
                         if (substring.substr(0, candidate.length) == candidate) {
-                            matchResult = [candidate];
+                            matchResult.match = [candidate];
                             matchResult.index = 0;
                         }
                     }
                 }
-                if (matchResult && matchResult.index == 0) {
-                    const matchLength = matchResult[0].length;
-                    substring = substring.substr(matchResult[0].length);
+                if (matchResult.match && matchResult.index == 0) {
+                    const matchLength = matchResult.match[0].length;
+                    substring = substring.substr(matchResult.match[0].length);
                     const oldIndex = index;
                     index += matchLength;
                     if (tokenDefinition.type !== tokenTypes.WHITESPACE) {
@@ -392,55 +378,55 @@ export class Parser {
                         }
                         result.push({
                             type: tokenDefinition.type,
-                            value: tokenDefinition.value(matchResult),
-                            tightness: tokenDefinition.tightness,
-                            range: {start: oldIndex, end: index}
+                            value: tokenDefinition.value!(matchResult.match),
+                            tightness: tokenDefinition.tightness || 0,
+                            range: { start: oldIndex, end: index }
                         });
                     }
                     break;
                 }
             }
         }
-        return {string: str, tokens: result, position: 0, errors: errors};
+        return { string: str, tokens: result, position: 0, errors: errors };
     }
 
-    resetStream():void {
-        this.stream = {string: "", tokens: [], position: 0, errors: []};
+    resetStream(): void {
+        this.stream = { string: "", tokens: [], position: 0, errors: [] };
     }
 
-    charPosition():number {
-        return this.currentToken() ? this.currentToken().range.start : this.stream.string.length;
+    charPosition(): number {
+        return this.currentToken() ? this.currentToken().range.start : this.stream!.string.length;
     }
 
-    remainder():string {
+    remainder(): string {
         const end = this.charPosition();
-        return this.stream.string.substr(end);
+        return this.stream!.string.substr(end);
     }
 
-    currentToken():Token {
-        return this.stream.tokens[this.stream.position];
+    currentToken(): Token {
+        return this.stream!.tokens[this.stream!.position];
     }
 
-    advance():void {
-        this.stream.position++;
+    advance(): void {
+        this.stream!.position++;
     }
 
-    parse(str:string):{tree:ParseTree, errors:Array<ParseTree>, remainder:string} {
+    parse(str: string): ParseResult {
         this.stream = this.tokenize(str);
         this.parseErrors = [];
         const tree = this.parseExpression(0);
-        var result = {tree, errors: this.parseErrors, remainder: this.remainder()};
+        var result = { tree, errors: this.parseErrors, remainder: this.remainder() };
         this.parseErrors = [];
         this.resetStream();
         return result;
     }
 
-    parseExpression(tightness:number):ParseTree {
+    parseExpression(tightness: number): ParseTree {
         let token = this.currentToken();
         let tokenDef = this.tokensByType[token.type];
         const start = token.range.start;
         this.advance();
-        let tree = tokenDef.startParse(this, token);
+        let tree = tokenDef.startParse!(this, token);
         tree.range.start = start;
         tree.range.end = this.charPosition();
         if (tree.type == ERROR) {
@@ -450,7 +436,7 @@ export class Parser {
         while (token && tightness < token.tightness) {
             tokenDef = this.tokensByType[token.type];
             this.advance();
-            let newTree = tokenDef.extendParse(this, tree, token);
+            let newTree = tokenDef.extendParse!(this, tree, token);
             newTree.range.start = tree.range.start;
             newTree.range.end = this.charPosition();
             if (newTree.type == ERROR) {

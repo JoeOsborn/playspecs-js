@@ -3,7 +3,7 @@
     <link rel="stylesheet" href="resources/css/explain.css"/>
     <link rel="stylesheet" href="resources/css/footnotes.css"/>
     <script src="resources/js/explain.js"></script>
-    <script src="../playspecs.js"></script>
+    <script src="../dist/bundle.js"></script>
 </head>
 <body>
 
@@ -28,12 +28,12 @@
             {
                 type: "LETTER",
                 match: /^[a-z](?![a-z])/,
-                startParse: Playspecs.Parser.parseValue
+                startParse: Playspecs.parseValue
             },
             {
                 type: "UPPER",
                 match: "upper",
-                startParse: Playspecs.Parser.parseValue
+                startParse: Playspecs.parseValue
             }
         ],
         trace: {
@@ -51,7 +51,13 @@
             isAtEnd: function (trace) {
                 // Is it at the last safe index? Note this isn't "isPastEnd"!
                 return trace.index >= trace.data.length - 1;
+            }/*, //Optional:
+            isStreaming: function(trace) {
+              return false;
+              //return true if the trace might still get more elements and we should not drop potential matches that are at the end of the string.
+              //this means that you can keep calling PlayspecResult.next() although it won't always deliver a match. 
             }
+              */
         },
         checks: {
             LETTER: function (_trace, state, _idx, letterNode) {
@@ -96,14 +102,14 @@
             children: []
         }), true);
         ex(testSpec.check("aBc", "B", 1, {
-            type: Playspecs.Parser.parseTypes.AND,
+            type: Playspecs.parseTypes.AND,
             children: [
                 {type: "LETTER", value: "b", children: []},
                 {type: "UPPER", value: "upper", children: []}
             ]
         }), true);
         ex(testSpec.check("aBc", "c", 2, {
-            type: Playspecs.Parser.parseTypes.OR,
+            type: Playspecs.parseTypes.OR,
             children: [
                 {type: "LETTER", value: "a", children: []},
                 {type: "UPPER", value: "upper", children: []}

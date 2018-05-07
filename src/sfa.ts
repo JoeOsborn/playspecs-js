@@ -1,5 +1,6 @@
-import {parseTypes, isPropositional, cloneTree, BOUND_INFINITE} from "./parser";
-import {stringifyFormula} from "./compiler";
+import { parseTypes, isPropositional, cloneTree } from "./parser";
+import { ParseTree } from "./types";
+import { stringifyFormula } from "./compiler";
 let stateID = 0;
 
 export function resetStateID() {
@@ -7,16 +8,18 @@ export function resetStateID() {
 }
 
 export class SFA {
+    startStates: State[];
+    acceptingStates: State[];
     constructor() {
         this.startStates = [new State()];
         this.acceptingStates = [];
     }
 
-    newState(optID) {
+    newState(optID?: string) {
         return new State(optID);
     }
 
-    markAccepting(s) {
+    markAccepting(s: State) {
         //add to acceptingStates
         if (this.acceptingStates.indexOf(s) == -1) {
             this.acceptingStates.push(s);
@@ -27,20 +30,20 @@ export class SFA {
         s.isAccepting = true;
     }
 
-    markNonAccepting(s) {
+    markNonAccepting(s: State) {
         //mark non-accepting
         s.isAccepting = false;
         if (this.acceptingStates.indexOf(s) != -1) {
             //remove from acceptingStates
-            s.acceptingStates.splice(s.acceptingStates.indexOf(s), 1);
+            this.acceptingStates.splice(this.acceptingStates.indexOf(s), 1);
         }
     }
 
     getStates() {
-        let found = {};
+        let found: { [id: string]: State } = {};
         let stack = this.startStates.slice();
         while (stack.length) {
-            const here = stack.pop();
+            const here: State = stack.pop()!;
             found[here.id] = here;
             for (let ek in here.edges) {
                 let e = here.edges[ek];
@@ -58,7 +61,7 @@ export class SFA {
         const middle = this.getStates().map(function (s) {
             return ["  " + s.id + ` [shape=${s.isAccepting ? "doublecircle" : "circle"}];`].concat(
                 s.edges.map(function (e, i) {
-                    return "  " + s.id + "->" + e.target.id +
+                    return "  " + s.id + "->" + e.target!.id +
                         ` [label="${i}:${e.formula ? stringifyFormula(e.formula) : "&#949;"}:${e.label.map((l) => l.type + "." + l.group).join(",")}"];`;
                 })
             ).join("\n");
@@ -68,32 +71,33 @@ export class SFA {
     }
 
     eelim() {
-        let stack = this.startStates.slice(), seen = {};
+        let stack = this.startStates.slice(),
+            seen: { [id: string]: State } = {};
         for (let sk = 0; sk < stack.length; sk++) {
             seen[stack[sk].id] = stack[sk];
         }
         while (stack.length) {
-            const s = stack.pop();
-            let reachable = {[s.id]: s};
+            const s = stack.pop()!;
+            let reachable = { [s.id]: s };
             for (let i = 0; i < s.edges.length; i++) {
                 const e = s.edges[i];
                 //e is a null transition but not an accepting null transition
                 if (!e.formula && !(s.isAccepting && e.target == s)) {
-                    if (e.target.id in reachable) {
+                    if (e.target!.id in reachable) {
                         s.edges.splice(i, 1);
                         i--;
                         continue;
                     } else {
-                        const targetEs = e.target.edges;
+                        const targetEs = e.target!.edges;
                         const newEs = targetEs.map((te) => new Edge(te.target == e.target && te.formula == null ? s : te.target, te.formula, e.label.concat(te.label)));
-                        if (e.target.isAccepting && !s.isAccepting) {
+                        if (e.target!.isAccepting && !s.isAccepting) {
                             this.acceptingStates.push(s);
                             s.isAccepting = true;
                         }
                         s.edges.splice(i, 1, ...newEs);
                     }
                 }
-                reachable[e.target.id] = e.target;
+                reachable[e.target!.id] = e.target!;
             }
             for (let rk in reachable) {
                 if (!(rk in seen)) {
@@ -105,13 +109,13 @@ export class SFA {
         return this;
     }
 
-    intersect(b) {
+    intersect(b: SFA): SFA {
         this.eelim();
         const a = this;
         b.eelim();
         let axb = new SFA();
         axb.startStates = [];
-        let stack = [], states = {};
+        let stack: State[][] = [], states: { [id: string]: { [id: string]: State } } = {};
         for (let i = 0; i < a.startStates.length; i++) {
             const sa = a.startStates[i];
             for (let j = 0; j < b.startStates.length; j++) {
@@ -129,15 +133,15 @@ export class SFA {
             }
         }
         while (stack.length) {
-            const [sa,sb] = stack.pop();
+            const [sa, sb] = stack.pop()!;
             const sab = states[sa.id][sb.id];
             for (let i = 0; i < sa.edges.length; i++) {
                 const ae = sa.edges[i];
-                const aet = ae.target;
+                const aet = ae.target!;
                 const aeIsAcceptingSelfEdge = sa.isAccepting && aet == sa && !ae.formula;
                 for (let j = 0; j < sb.edges.length; j++) {
                     const be = sb.edges[j];
-                    const bet = be.target;
+                    const bet = be.target!;
                     const beIsAcceptingSelfEdge = sb.isAccepting && bet == sb && !be.formula;
                     let phi = null;
                     if (aeIsAcceptingSelfEdge != beIsAcceptingSelfEdge) {
@@ -146,7 +150,7 @@ export class SFA {
                         if (!ae.formula || !be.formula) {
                             console.error("Uneliminated non ASE epsilon transition");
                         }
-                        phi = intersectFormulae(ae.formula, be.formula);
+                        phi = intersectFormulae(ae.formula!, be.formula!);
                         if (!phi) {
                             continue;
                         }
@@ -177,36 +181,42 @@ export class SFA {
     }
 }
 
-function intersectFormulae(p1, p2) {
+function intersectFormulae(p1: ParseTree, p2: ParseTree) {
     //todo: fixme: implement for real
-    return {type: parseTypes.AND, value: "&", children: [p1, p2], range: {start: -1, end: -1}};
+    return { type: parseTypes.AND, value: "&", children: [p1, p2], range: { start: -1, end: -1 } };
 }
 
-class State {
-    constructor(id) {
-        this.id = id || (stateID++);
+export class State {
+    id: string;
+    edges: Edge[];
+    isAccepting: boolean;
+    constructor(id?: string) {
+        this.id = id || (stateID++).toString(10);
         this.edges = [];
         this.isAccepting = false;
     }
 
-    addEdge(e) {
+    addEdge(e: Edge) {
         this.edges.push(e);
     }
 
-    removeEdge(e) {
+    removeEdge(e: Edge) {
         this.edges.splice(this.edges.indexOf(e), 1);
     }
 }
 
-class Edge {
-    constructor(target, formula, label) {
+export class Edge {
+    target: State | null;
+    formula: ParseTree | null;
+    label: any[];
+    constructor(target: State | null, formula: ParseTree | null, label: any[]) {
         this.target = target;
         this.formula = formula;
         this.label = label;
     }
 }
 
-export function fromParseTree(tree) {
+export function fromParseTree(tree: ParseTree) {
     const sfa = new SFA();
     const s = sfa.startStates[0];
     const outEdges = build(sfa, s, tree);
@@ -219,7 +229,7 @@ export function fromParseTree(tree) {
     return sfa;
 }
 
-function build(sfa, seedState, tree) {
+function build(sfa: SFA, seedState: State, tree: ParseTree): Edge[] {
     if (isPropositional(tree) && tree.type != parseTypes.CAPTURE) {
         const e = new Edge(null, tree, []);
         seedState.addEdge(e);
@@ -247,7 +257,7 @@ function build(sfa, seedState, tree) {
                 type: parseTypes.CONCATENATION,
                 value: ",",
                 children: [cloneTree(phi), cloned],
-                range: {start: cloned.start, end: cloned.end}
+                range: { start: cloned.range.start, end: cloned.range.end }
             };
             return build(sfa, seedState, next);
         } else if (max != "$END") {
@@ -257,12 +267,12 @@ function build(sfa, seedState, tree) {
                 type: parseTypes.CONCATENATION,
                 value: ",",
                 children: [cloneTree(phi), cloned],
-                range: {start: cloned.start, end: cloned.end}
+                range: { start: cloned.range.start, end: cloned.range.end }
             };
             //Lots of duplication here when only orderings are changed. Not so proud of it
             //but let's just make sure it's working first.
             if (greedy) {
-                let edges = [];
+                let edges: Edge[] = [];
                 if (max == 0) {
                     edges = edges.concat([new Edge(null, phi, [])]);
                 } else {
@@ -315,7 +325,7 @@ function build(sfa, seedState, tree) {
         //hack: we store a link from the end to its corresponding start
         //so that the correct captureID can be propagated to the "end"
         //from the "start" during compilation
-        let captureStart = {type: "start-capture", group: (tree.value.group == "$implicit" ? s.id : tree.value.group)};
+        let captureStart = { type: "start-capture", group: (tree.value.group == "$implicit" ? s.id : tree.value.group) };
         seedState.addEdge(new Edge(s, null, [captureStart]));
         const es = build(sfa, s, tree.children[0]);
         for (let ek = 0; ek < es.length; ek++) {

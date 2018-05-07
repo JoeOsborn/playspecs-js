@@ -4,7 +4,7 @@
     <link rel="stylesheet" href="resources/css/footnotes.css"/>
     <script src="resources/js/viz.js"></script>
     <script src="resources/js/explain.js"></script>
-    <script src="../playspecs.js"></script>
+    <script src="../dist/bundle.js"></script>
 </head>
 <body>
 <h1>Compilation</h1>
@@ -98,17 +98,16 @@
 </table>
 
 <script>
-    var promWeek = {
-        tokens: [
+    var promWeek = [
             {
                 type: "PERSON",
                 match: ["Chloe", "Simon", "Phoebe", "Doug"/*, ... */],
-                startParse: Playspecs.Parser.parseValue
+                startParse: Playspecs.parseValue
             },
             {
                 type: "RELATIONSHIP",
                 match: ["dating", "friends", "enemies", "embarrassed"/*, ... */],
-                startParse: Playspecs.Parser.parseValue
+                startParse: Playspecs.parseValue
             },
             {
                 type: "LINK",
@@ -147,8 +146,7 @@
                 }
             }
             // Also: networks, inequalities, numbers
-        ]
-    };
+        ];
     var expectedStringProgram =
             "0:split 3 1\n" +
             "1:check true\n" +
@@ -171,7 +169,7 @@
             "always suffices to find all matches (as per <a href='https://swtch.com/~rsc/regexp/regexp2.html'>Russ " +
             "Cox's note on unanchored expressions</a>). This is important since it may not be possible to access " +
             "the states of a game trace in arbitrary order.</p>", function () {
-        var parser = new Playspecs.Parser.Parser(promWeek);
+        var parser = new Playspecs.Parser(promWeek);
         var compiler = new Playspecs.Compiler(promWeek);
         var parseTree = parser.parse("start, not Chloe-dating-Doug ..., Doug-embarrassed-Chloe & end").tree;
         var program = compiler.compile(parseTree);
@@ -340,10 +338,10 @@
             }
         ]);
         // We can also ask the compiler to stringify the VM code for easier reading.
-        var stringProgram = Playspecs.Compiler.stringify(program);
+        var stringProgram = Playspecs.stringify(program);
         ex(stringProgram, expectedStringProgram);
     });
-    var parser = new Playspecs.Parser.Parser(promWeek);
+    var parser = new Playspecs.Parser(promWeek);
     var compiler = new Playspecs.Compiler(promWeek);
     expectedStringProgram = "0:split 3 1  		(root)\n" +
             "1:check true  		(root)\n" +
@@ -376,7 +374,7 @@
             "be labeled with the character range where the condition appears in the original spec.</p>", function () {
         var parseTree = parser.parse("3...5, (false ..2 ; true, false, true) ...").tree;
         var program = compiler.compile(parseTree, true);
-        var stringProgram = Playspecs.Compiler.stringify(program);
+        var stringProgram = Playspecs.stringify(program);
         ex(stringProgram, expectedStringProgram);
     });
 </script>
@@ -687,37 +685,37 @@
 
 <script>
     desc("", function () {
-        ex(Playspecs.SFA.fromParseTree(parser.parse("start").tree).toDot(), undefined, Viz);
+        ex(Playspecs.fromParseTree(parser.parse("start").tree).toDot(), undefined, Viz);
         //We'll reset the state IDs each time for nicer diagrams.
-        Playspecs.SFA.resetStateID();
-        var sfa = Playspecs.SFA.fromParseTree(parser.parse("start, end").tree);
+        Playspecs.resetStateID();
+        var sfa = Playspecs.fromParseTree(parser.parse("start, end").tree);
         ex(sfa.toDot(), undefined, Viz);
         ex(sfa.eelim().toDot(), undefined, Viz);
-        Playspecs.SFA.resetStateID();
-        sfa = Playspecs.SFA.fromParseTree(parser.parse("start, not end..., end").tree);
+        Playspecs.resetStateID();
+        sfa = Playspecs.fromParseTree(parser.parse("start, not end..., end").tree);
         ex(sfa.toDot(), undefined, Viz);
         ex(sfa.eelim().toDot(), undefined, Viz);
-        Playspecs.SFA.resetStateID();
-        ex(Playspecs.SFA.fromParseTree(parser.parse("start 3...").tree).toDot(), undefined, Viz);
-        Playspecs.SFA.resetStateID();
-        ex(Playspecs.SFA.fromParseTree(parser.parse("start 3...5").tree).toDot(), undefined, Viz);
-        Playspecs.SFA.resetStateID();
-        ex(Playspecs.SFA.fromParseTree(parser.parse("start ...5").tree).toDot(), undefined, Viz);
-        Playspecs.SFA.resetStateID();
-        ex(Playspecs.SFA.fromParseTree(parser.parse("(Chloe-dating-Doug..., not Chloe-dating-Doug)...").tree).toDot(), undefined, Viz);
-        Playspecs.SFA.resetStateID();
-        ex(Playspecs.SFA.fromParseTree(parser.parse("start, (Chloe-dating-Doug..., not Chloe-dating-Doug)...").tree).toDot(), undefined, Viz);
-        Playspecs.SFA.resetStateID();
-        ex(Playspecs.SFA.fromParseTree(parser.parse("start, ($(not end...) ^ $(true)...), end").tree).toDot(), undefined, Viz);
-        Playspecs.SFA.resetStateID();
-        ex(Playspecs.SFA.fromParseTree(parser.parse("$a($b(Chloe-friends-Doug...) ^ (..., Chloe-dating-Doug))").tree).toDot(), undefined, Viz);
-        Playspecs.SFA.resetStateID();
-        ex(Playspecs.SFA.fromParseTree(parser.parse("start, ($(Chloe-dating-Doug.., Chloe-enemies-Doug..) ; Chloe-friends-Doug)..").tree).toDot(), undefined, Viz);
-        Playspecs.SFA.resetStateID();
-        ex(Playspecs.SFA.fromParseTree(parser.parse("not end..., end ^ true...").tree).toDot(), undefined, Viz);
-        Playspecs.SFA.resetStateID();
-        ex(Playspecs.SFA.fromParseTree(parser.parse("start, ((Chloe-dating-Doug..., not Chloe-dating-Doug)... ^ not Chloe-enemies-Doug 3...)").tree).toDot(), undefined, Viz);
-        Playspecs.SFA.resetStateID();
+        Playspecs.resetStateID();
+        ex(Playspecs.fromParseTree(parser.parse("start 3...").tree).toDot(), undefined, Viz);
+        Playspecs.resetStateID();
+        ex(Playspecs.fromParseTree(parser.parse("start 3...5").tree).toDot(), undefined, Viz);
+        Playspecs.resetStateID();
+        ex(Playspecs.fromParseTree(parser.parse("start ...5").tree).toDot(), undefined, Viz);
+        Playspecs.resetStateID();
+        ex(Playspecs.fromParseTree(parser.parse("(Chloe-dating-Doug..., not Chloe-dating-Doug)...").tree).toDot(), undefined, Viz);
+        Playspecs.resetStateID();
+        ex(Playspecs.fromParseTree(parser.parse("start, (Chloe-dating-Doug..., not Chloe-dating-Doug)...").tree).toDot(), undefined, Viz);
+        Playspecs.resetStateID();
+        ex(Playspecs.fromParseTree(parser.parse("start, ($(not end...) ^ $(true)...), end").tree).toDot(), undefined, Viz);
+        Playspecs.resetStateID();
+        ex(Playspecs.fromParseTree(parser.parse("$a($b(Chloe-friends-Doug...) ^ (..., Chloe-dating-Doug))").tree).toDot(), undefined, Viz);
+        Playspecs.resetStateID();
+        ex(Playspecs.fromParseTree(parser.parse("start, ($(Chloe-dating-Doug.., Chloe-enemies-Doug..) ; Chloe-friends-Doug)..").tree).toDot(), undefined, Viz);
+        Playspecs.resetStateID();
+        ex(Playspecs.fromParseTree(parser.parse("not end..., end ^ true...").tree).toDot(), undefined, Viz);
+        Playspecs.resetStateID();
+        ex(Playspecs.fromParseTree(parser.parse("start, ((Chloe-dating-Doug..., not Chloe-dating-Doug)... ^ not Chloe-enemies-Doug 3...)").tree).toDot(), undefined, Viz);
+        Playspecs.resetStateID();
     })
 </script>
 
@@ -821,13 +819,13 @@
             "23:end $root (-1)  \t\t(root)\n" +
             "24:match  \t\t(root)";
     desc("", function () {
-        var parser = new Playspecs.Parser.Parser(promWeek);
+        var parser = new Playspecs.Parser(promWeek);
         var compiler = new Playspecs.Compiler(promWeek);
         var parseTree = parser.parse("start, ($(not end...) ^ $(true)...), end").tree;
-        ex(Playspecs.SFA.fromParseTree(parseTree).toDot(), expectedSFAResult, Viz);
-        Playspecs.SFA.resetStateID();
+        ex(Playspecs.fromParseTree(parseTree).toDot(), expectedSFAResult, Viz);
+        Playspecs.resetStateID();
         var program = compiler.compile(parseTree, true);
-        var stringProgram = Playspecs.Compiler.stringify(program);
+        var stringProgram = Playspecs.stringify(program);
         ex(stringProgram, expectedStringProgram);
     })
 </script>

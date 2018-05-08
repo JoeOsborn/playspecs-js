@@ -23,5 +23,7 @@
         "webpack": "^4.6.0",
         "webpack-cli": "^2.1.2"
     },
-    "scripts": {}
+    "scripts": {
+        "prepare": "webpack"
+    }
 }

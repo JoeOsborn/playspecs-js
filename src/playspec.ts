@@ -24,7 +24,8 @@ export class Playspec<Trace, State> {
     get checkAPI() {
         return this.context.checks;
     }
-    check(trace: Trace, state: State, idx: number, formula: ParseTree): Boolean {
+    check(trace: Trace, state: State, idx: number, formula: ParseTree): any {
+        var left, right;
         switch (formula.type) {
             case parseTypes.TRUE:
                 return true;
@@ -35,11 +36,19 @@ export class Playspec<Trace, State> {
             case parseTypes.END:
                 return this.traceAPI.isAtEnd(trace);
             case parseTypes.AND:
-                return this.check(trace, state, idx, formula.children[0]) &&
-                    this.check(trace, state, idx, formula.children[1]);
+                left = this.check(trace, state, idx, formula.children[0]);
+                right = this.check(trace, state, idx, formula.children[1]);
+                if (left && right) {
+                    return { node: formula, left: left, right: right };
+                }
+                return false;
             case parseTypes.OR:
-                return this.check(trace, state, idx, formula.children[0]) ||
-                    this.check(trace, state, idx, formula.children[1]);
+                left = this.check(trace, state, idx, formula.children[0]);
+                right = this.check(trace, state, idx, formula.children[1]);
+                if (left || right) {
+                    return { node: formula, left: left, right: right };
+                }
+                return false;
             case parseTypes.NOT:
                 return !this.check(trace, state, idx, formula.children[0]);
             case parseTypes.GROUP:
@@ -277,7 +286,7 @@ type MatchStartEnd = {
     groupIndex: number,
     index: number
 };
-type MatchRegisterState = { type: "state", index: number, state: any };
+type MatchRegisterState = { type: "state", index: number, state: any, result: any };
 type MatchInstruction = MatchStartEnd | MatchRegisterState;
 type Match = { priority: number, instructions: Array<MatchInstruction> };
 
@@ -455,13 +464,15 @@ type GroupData<State> = {
     groupIndex: number,
     start: number,
     end: number,
-    states: State[] | undefined
+    states: State[] | undefined,
+    results: any[] | undefined
 };
 
 type PlayspecMatchResult<State> = {
     start: number,
     end: number,
     states?: State[],
+    results?: any[],
     subgroups: GroupData<State>[]
 };
 
@@ -626,10 +637,12 @@ class PlayspecResult<Trace, State> {
                         groupIndex: instr.groupIndex,
                         start: instr.index,
                         end: Infinity,
-                        states: undefined
+                        states: undefined,
+                        results: undefined
                     };
                     if (this.config.preserveStates) {
                         newG.states = [];
+                        newG.results = [];
                     }
                     groups.push(newG);
                     if (liveGroups[newG.group]) {
@@ -644,6 +657,7 @@ class PlayspecResult<Trace, State> {
                         let continuedG = liveGroups[openGroups[gi]];
                         //We'll only get here if we're preserving states; unless we reuse "state" for atomic element captures
                         continuedG.states!.push(instr.state);
+                        continuedG.results!.push(instr.result);
                     }
                     break;
                 case "end":
@@ -665,10 +679,12 @@ class PlayspecResult<Trace, State> {
             subgroups: groups.filter(
                 (group) => group.start != group.end
             ),
-            states: undefined
+            states: undefined,
+            results: undefined
         };
         if (this.config.preserveStates) {
             rootMatch.states = rootGroup.states!;
+            rootMatch.results = rootGroup.results!;
         }
         return rootMatch;
     }
@@ -711,7 +727,8 @@ class PlayspecResult<Trace, State> {
                                     thread.pushMatchInstruction({
                                         type: "state",
                                         index: this.state.index,
-                                        state: copiedState
+                                        state: copiedState,
+                                        result: checkResult
                                     });
                                 }
                                 //TODO: atomic captures go here

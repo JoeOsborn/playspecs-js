@@ -96,19 +96,21 @@
         // We'll make a trivial Playspec just to show how propositional formulae work.
         var testSpec = new Playspecs.Playspec("true", lettersContext);
         // The private method "check" handles propositional formulae.
-        ex(testSpec.check("aBc", "a", 0, {
+        // We use the !! here because the result of check includes data about the matching
+        // formula, and for testing purposes it's simpler to just convert it to a boolean.
+        ex(!!testSpec.check("aBc", "a", 0, {
             type: "LETTER",
             value: "a",
             children: []
         }), true);
-        ex(testSpec.check("aBc", "B", 1, {
+        ex(!!testSpec.check("aBc", "B", 1, {
             type: Playspecs.parseTypes.AND,
             children: [
                 {type: "LETTER", value: "b", children: []},
                 {type: "UPPER", value: "upper", children: []}
             ]
         }), true);
-        ex(testSpec.check("aBc", "c", 2, {
+        ex(!!testSpec.check("aBc", "c", 2, {
             type: Playspecs.parseTypes.OR,
             children: [
                 {type: "LETTER", value: "a", children: []},

@@ -26,6 +26,7 @@ export class Playspec<Trace, State> {
     }
     check(trace: Trace, state: State, idx: number, formula: ParseTree): any {
         var left, right;
+        //TODO: generate less garbage on check results
         switch (formula.type) {
             case parseTypes.TRUE:
                 return true;
@@ -62,7 +63,7 @@ export class Playspec<Trace, State> {
         }
     }
 
-    match(trace: Trace, preserveStates: boolean = false): PlayspecResult<Trace, State> | null {
+    match(trace: Trace, preserveStates: false | true | "explicit" = false): PlayspecResult<Trace, State> | null {
         return (new PlayspecResult({
             spec: this,
             preserveStates
@@ -147,6 +148,16 @@ class Thread {
     hasOpenMatch(): boolean {
         for (let i = 0; i < this.matches.length; i++) {
             if (this.matches[i].instructions.length > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    hasExplicitMatch(): boolean {
+        for (let i = 0; i < this.matches.length; i++) {
+            if (this.matches[i].instructions.length > 0 &&
+                (this.matches[i].instructions[0] as MatchStartEnd).groupIndex != -1) {
                 return true;
             }
         }
@@ -477,11 +488,11 @@ type PlayspecMatchResult<State> = {
 };
 
 class PlayspecResult<Trace, State> {
-    config: { spec: Playspec<Trace, State>, preserveStates: boolean };
+    config: { spec: Playspec<Trace, State>, preserveStates: false | true | "explicit" };
     state: PlayspecResultState<Trace> | undefined;
     match: PlayspecMatchResult<State> | undefined;
     constructor(
-        config: { spec: Playspec<Trace, State>, preserveStates: boolean },
+        config: { spec: Playspec<Trace, State>, preserveStates: false | true | "explicit" },
         state: PlayspecResultState<Trace>,
         match: PlayspecMatchResult<State> | undefined) {
         this.config = config;
@@ -650,7 +661,6 @@ class PlayspecResult<Trace, State> {
                     }
                     liveGroups[newG.group] = newG;
                     break;
-                //TODO: handle atomic formula captures as a new case? or as state?
                 case "state":
                     let openGroups = Object.getOwnPropertyNames(liveGroups);
                     for (let gi = 0; gi < openGroups.length; gi++) {
@@ -683,8 +693,8 @@ class PlayspecResult<Trace, State> {
             results: undefined
         };
         if (this.config.preserveStates) {
-            rootMatch.states = rootGroup.states!;
-            rootMatch.results = rootGroup.results!;
+            rootMatch.states = rootGroup.states;
+            rootMatch.results = rootGroup.results;
         }
         return rootMatch;
     }
@@ -717,8 +727,10 @@ class PlayspecResult<Trace, State> {
                         );
                         if (checkResult) {
                             thread.pc++;
-                            if (thread.hasOpenMatch) {
-                                if (this.config.preserveStates) {
+                            if (thread.hasOpenMatch()) {
+                                if (this.config.preserveStates &&
+                                    (thread.hasExplicitMatch() ||
+                                        this.config.preserveStates != "explicit")) {
                                     if (!copiedState) {
                                         copiedState = this.config.spec.traceAPI.copyCurrentState ?
                                             this.config.spec.traceAPI.copyCurrentState(this.state.trace) :
@@ -731,7 +743,6 @@ class PlayspecResult<Trace, State> {
                                         result: checkResult
                                     });
                                 }
-                                //TODO: atomic captures go here
                             }
                             this.enqueueThread(thread);
                         } else { //otherwise drop the thread on the floor

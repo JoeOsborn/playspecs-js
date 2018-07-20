@@ -34,6 +34,7 @@ export interface IParser {
 }
 
 export type TraceAPI<Trace, State> = {
+    isReady?: (t: Trace) => boolean,
     isAtEnd: (t: Trace) => boolean,
     start: (t: Trace) => Trace,
     currentState: (t: Trace) => State,

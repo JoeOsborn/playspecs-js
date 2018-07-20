@@ -138,7 +138,7 @@ class Thread {
             }
             if (!found) {
                 let match = cloneMatch(other.matches[i]);
-                match.priority = Math.max(this.priority, this.matches[i].priority);
+                match.priority = Math.max(this.priority, match.priority);
                 this.matches.push(match);
             }
         }
@@ -702,6 +702,13 @@ class PlayspecResult<Trace, State> {
     next(): PlayspecResult<Trace, State> | null {
         if (!this.state) {
             throw new Error("Don't call next() on the same PlayspecResult twice!");
+        }
+        //Some kinds of trace aren't ready to start matching until some time goes by.
+        if (this.config.spec.traceAPI.isReady &&
+            !this.config.spec.traceAPI.isReady(this.state.trace)) {
+            const nextState = this.state;
+            this.state = undefined;
+            return new PlayspecResult(this.config, nextState, undefined);
         }
         while (!this.hasReadyMatch() && this.state.queue.length) {
             const state = this.config.spec.traceAPI.currentState(this.state.trace);

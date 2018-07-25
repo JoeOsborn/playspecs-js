@@ -704,7 +704,8 @@ class PlayspecResult<Trace, State> {
             throw new Error("Don't call next() on the same PlayspecResult twice!");
         }
         //Some kinds of trace aren't ready to start matching until some time goes by.
-        if (this.config.spec.traceAPI.isReady &&
+        if (!this.hasReadyMatch() &&
+            this.config.spec.traceAPI.isReady &&
             !this.config.spec.traceAPI.isReady(this.state.trace)) {
             const nextState = this.state;
             this.state = undefined;

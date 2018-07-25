@@ -2,7 +2,8 @@ const path = require('path');
 
 module.exports = {
     entry: './src/playspecs.ts',
-    devtool: 'inline-source-map',
+    devtool: 'source-map',
+    mode: 'production',
     module: {
         rules: [
         {
